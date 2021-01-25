@@ -1,0 +1,4 @@
+-ifndef(ERL_SYNTAX_COMPILE_META).
+-define(ERL_SYNTAX_COMPILE_META, true).
+-compile({parse_transform, erl_syntax_compile_meta_transformer}).
+-endif.

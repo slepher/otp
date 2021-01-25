@@ -7,7 +7,9 @@ include $(ERL_TOP)/make/$(TARGET)/otp.mk
 
 MODULES= \
 	syntax_tools_SUITE \
-	merl_SUITE
+	merl_SUITE \
+    erl_syntax_sample_1 \
+	erl_syntax_traverse_SUITE
 
 ERL_FILES= $(MODULES:%=%.erl)
 

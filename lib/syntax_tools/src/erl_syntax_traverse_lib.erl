@@ -9,7 +9,7 @@
 -module(erl_syntax_traverse_lib).
 
 %% API exports
--export([attributes/2, attributes_with_line/2, attribute_nodes/2,  module_attributes/2, read/1]).
+-export([attributes/2, attributes_with_line/2, attribute_nodes/2, module_attributes/2, read/1]).
 -export([is_mfa/1, is_opts/1]).
 -export([attribute_node/3]).
 -export([abstract/1, abstract/2]).
@@ -19,7 +19,6 @@
 -export([replace_from_nth/3]).
 -export([reorder_exports/1, reorder_attributes/2]).
 -export([update_option_warnings/2, validate_options/2]).
--export([ast_to_options/1, ast_to_options/2]).
 -export([relative_path/1]).
 %%====================================================================
 %% API functions
@@ -304,53 +303,6 @@ replace_from_nth(Nodes, N, [Form|Forms], Heads, #{dock_map := DockAttributes} = 
 
 replace_from_nth(Nodes, N, [Head|Forms], Heads, WithExports) ->
     replace_from_nth(Nodes, N - 1, Forms, [Head|Heads], WithExports).
-
-ast_to_options(Ast) ->
-    ast_to_options(Ast, []).
-
-ast_to_options(Ast, ExcepKeys) ->
-    Writer = erl_syntax_monad_writer_t:writer_t(erl_syntax_monad_identity:new()),
-    MonadWriter = ast_to_options(Ast, ExcepKeys, Writer),
-    erl_syntax_monad_identity:run(erl_syntax_monad_writer_t:run(MonadWriter)).
-
-ast_to_options({cons, _Line, Head, Tail}, Keys, Writer) ->
-    erl_syntax_monad:bind(
-      ast_to_value(Head, Writer),
-      fun(Head1) ->
-              erl_syntax_monad:bind(
-                ast_to_options(Tail, Keys, Writer),
-                fun(Tail1) ->
-                        erl_syntax_monad:return([Head1|Tail1], Writer)
-                end, Writer)
-      end, Writer);
-ast_to_options({nil, _Line}, _Keys, Writer) ->
-    erl_syntax_monad:return([], Writer);
-ast_to_options({map, _Line, MapAssocs}, Keys, Writer) ->
-    erl_syntax_monad:foldl_m(
-      fun({map_field_assoc, _, {atom, _LineA, Key}, Value}, Acc) ->
-              case lists:member(Key, Keys) of
-                  true ->
-                      erl_syntax_monad:return(maps:put(Key, Value, Acc), Writer);
-                  false ->
-                      erl_syntax_monad:bind(
-                        ast_to_value(Value, Writer),
-                        fun(Value1) ->
-                                erl_syntax_monad:return(maps:put(Key, Value1, Acc), Writer)
-                        end, Writer)
-              end;
-         ({map_field_assoc, _, Key, _Value}, Acc) ->
-              erl_syntax_monad:then(
-                erl_syntax_monad:tell([{invalid_option_key, Key}], Writer),
-                erl_syntax_monad:return(Acc, Writer),
-                Writer)
-      end, maps:new(), MapAssocs, Writer);
-ast_to_options(Value, _Keys, Warnings) ->
-    ast_to_value(Value, Warnings).
-
-ast_to_value({Type, _Line, Value}, Writer) when Type == atom ; Type == integer; Type == float; Type == string ->
-    erl_syntax_monad:return(Value, Writer);
-ast_to_value(Value, Writer) ->
-    erl_syntax_monad:return(Value, Writer).
 
 update_option_warnings(OptionName, Warnings) ->
     lists:map(

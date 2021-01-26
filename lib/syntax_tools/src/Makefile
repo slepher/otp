@@ -33,8 +33,6 @@ SOURCES=erl_syntax.erl erl_prettypr.erl erl_syntax_lib.erl	\
 	epp_dodger.erl prettypr.erl igor.erl \
 	merl.erl merl_transform.erl \
 	erl_syntax_monad.erl \
-	erl_syntax_monad_error_t.erl erl_syntax_monad_identity.erl \
-	erl_syntax_monad_state_t.erl erl_syntax_monad_writer_t.erl  \
     erl_syntax_base_m.erl erl_syntax_endo.erl erl_syntax_error_state.erl \
 	erl_syntax_return_m.erl erl_syntax_traverse_m.erl erl_syntax_walk_return.erl \
 	erl_syntax_options.erl erl_syntax_traverse.erl erl_syntax_traverse_lib.erl \

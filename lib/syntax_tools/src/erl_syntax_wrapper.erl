@@ -90,6 +90,7 @@ is_file(_Node) ->
 %%%===================================================================
 up_subtrees(Subtrees, #{node := pattern}) ->
     Subtrees;
+%% {up_node, Type, Subtrees} means add #{type => Type} to SubNode Attr in traverse_fun(SubNode, Attr)
 up_subtrees([NameTrees, Clauses], #{parent := named_fun_expr}) ->
     Names = lists:map(fun(NameTree) -> erl_syntax:revert(NameTree) end, NameTrees),
     [{up_node, pattern, Names}, {up_node, expression, Clauses}];
@@ -108,6 +109,7 @@ up_subtrees([[NameTree], BodyTrees], #{parent := attribute}) ->
 up_subtrees([NameTrees, Clauses], #{parent := function}) ->
     Names = lists:map(fun(NameTree) -> erl_syntax:revert_root(NameTree) end, NameTrees),
     [Names, Clauses];
+%% {skip, Subtrees} means skip traverse of subtree.
 up_subtrees([ExprLeft, Op, ExprRight], #{parent := infix_expr}) ->
     [ExprLeft, {skip, Op}, ExprRight];
 up_subtrees([Op, ExprRight], #{parent := prefix_expr}) ->
@@ -119,6 +121,7 @@ update_attribute_body_trees(export, BodyTrees) ->
     {skip, BodyTrees};
 update_attribute_body_trees(import, BodyTrees) ->
     {skip, BodyTrees};
+%% erl_syntax:subtrees in spec, callback, type, opaque does not return erl_parse tree but syntax_tree, should be transformed to normal erl_parse tree
 update_attribute_body_trees(Name, [SpecTree]) when (Name == spec); (Name == callback) ->
     case erl_syntax:concrete(SpecTree) of
         {FunName, Types} ->

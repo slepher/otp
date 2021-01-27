@@ -20,8 +20,9 @@
                                          error => any(),
                                          warning => any(),
                                          continue => boolean()}.
-    
+
 -export([new/1]).
+-export([to_traverse_m/2, to_traverse_m/3]).
 -export([to_map/1, to_map/2]).
 
 %%%===================================================================
@@ -37,6 +38,25 @@ new(Return) ->
             new(Map);
         error ->
             new(#{node => Return})
+    end.
+
+to_traverse_m(Return, Node) ->
+    to_traverse_m(Return, Node, #{}).
+
+to_traverse_m(Return, Node, Opts) ->
+    WithState = maps:get(with_state, Opts, false),
+    case to_map(Return) of
+        {ok, StructBase} ->
+            WalkReturn = new(StructBase),
+            erl_syntax_traverse_m:erl_syntax_traverse_m(WalkReturn);
+        error ->
+            case {Return, WithState} of
+                {{Node1, State}, true} ->
+                    WalkReturn = new(#{node => Node1, state => State}),
+                    erl_syntax_traverse_m:erl_syntax_traverse_m(WalkReturn);
+                _ ->
+                    erl_syntax_traverse_m:to_monad(Node, Return)
+            end
     end.
 
 to_map({warning, Warning}) ->
@@ -118,9 +138,6 @@ up_map(#{node := Node} = Map) ->
         false ->
             Map2#{return => Node}
     end;
-%% up_map(#{node := Node} = Map) ->
-%%     Map1 = maps:remove(node, Map),
-%%     Map1#{return => Node};
 up_map(#{errors := Errors}) when not is_list(Errors) ->
     exit({errors_should_be_list, Errors});
 up_map(#{warnings := Warnings}) when not is_list(Warnings) ->

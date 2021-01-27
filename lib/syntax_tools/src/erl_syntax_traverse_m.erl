@@ -71,7 +71,8 @@
 -export([with_formatter/2]).
 -export([warning/1, warnings/1, formatted_warnings/1, error/1, errors/1, formatted_errors/1]).
 -export([update_file/1, eof/0, update_line/2]).
-
+-export([deep_sequence_m/1, deep_sequence_m_1/1, deep_r_sequence_m/1]).
+-export([transform_mapfold_f/1]).
 %%%===================================================================
 %%% API
 %%%===================================================================
@@ -230,25 +231,6 @@ bind_continue_nodes(MA, AMB) ->
          ({NodeAs, false}) ->
               erl_syntax_monad:map_m(AMB, NodeAs, ?MODULE)
       end).
-
-%% updated_node(NodeA, MB) ->
-%%     map_m_state_ok(
-%%       fun(#{updated := false} = MState) ->
-%%               update_m_state(MState, #{nodes => erl_syntax_endo:endo([NodeA])});
-%%          (MState) ->
-%%               MState
-%%       end, MB).
-
-%% bind_node(NodeA, MB, BMC, pre) ->
-%%     bind(
-%%       listen_continue(updated_node(NodeA, MB)),
-%%       fun({NodeB, true}) ->
-%%               return(NodeB);
-%%          ({NodeB, false}) ->
-%%               BMC(NodeB)
-%%       end);
-%% bind_node(NodeA, MB, BMC, _) ->
-%%     bind(updated_node(NodeA, MB), BMC).
 
 bind_continue(MA, AMB) ->
     bind(
@@ -519,6 +501,29 @@ update_line(Line, MA) ->
                       update_m_state(MState, #{error => Error1})
               end
         end, MA).
+
+
+
+deep_sequence_m(MAss) ->
+    erl_syntax_monad:map_m(fun deep_sequence_m_1/1, MAss, erl_syntax_traverse_m).
+
+deep_sequence_m_1(MAs) when is_list(MAs) ->
+    erl_syntax_traverse_m:pop_nodes(erl_syntax_monad:sequence_m(MAs, erl_syntax_traverse_m));
+deep_sequence_m_1(MA) ->
+    erl_syntax_traverse_m:pop_nodes(MA).
+
+deep_r_sequence_m(MAs) ->
+    erl_syntax_monad:lift_m(fun lists:reverse/1, deep_sequence_m(lists:reverse(MAs)), erl_syntax_traverse_m).
+
+transform_mapfold_f(F) ->
+    fun(Node, Attr) ->
+            bind(
+              get(),
+              fun(State) ->
+                      Reply = F(Node, State, Attr),
+                      erl_syntax_walk_return:to_traverse_m(Reply, Node, #{with_state => true})
+              end)
+    end.
 %%--------------------------------------------------------------------
 %% @doc
 %% @spec

@@ -38,6 +38,7 @@ EDOC_REF3_FILES = \
 	erl_recomment.xml \
 	erl_syntax.xml \
 	erl_syntax_lib.xml \
+        erl_syntax_traverse.xml \
 	erl_tidy.xml \
 	igor.xml \
 	merl.xml \

@@ -22,10 +22,13 @@
 -export([forms_with_attribute/5]).
 -export([options/1]).
 -export([validate/2, validate/3]).
--export([attr_walk_return/1]).
 -export([by_validator/3]).
 -export([get_boolean/4]).
 
+%% Validator Functions
+-export([boolean/1, number/1, atom/1]).
+-export([list_of/2]).
+-export([default/3, required/2]).
 %%%===================================================================
 %%% API
 %%%===================================================================
@@ -98,22 +101,6 @@ validate(Validator, ToValidate, Options) ->
       fun(ToValidate1) ->
               validate_1(Validator, ToValidate1, Options)
       end).
-
-attr_walk_return(#{node := Node} = Map) ->
-    Map1 = maps:remove(node, Map),
-    attr_walk_return(Map1#{nodes => [Node]});
-attr_walk_return(#{} = Map) ->
-    Nodes = maps:get(nodes, Map, []),
-    A = maps:get(return, Map, ok),
-    Map1 = maps:remove(nodes, Map),
-    erl_syntax_walk_return:new(Map1#{return => {Nodes, A}});
-attr_walk_return(Return) ->
-    case erl_syntax_walk_return:to_map(Return) of
-        {ok, Map} ->
-            attr_walk_return(Map);
-        error ->
-            attr_walk_return(#{return => Return})
-    end.
 %%--------------------------------------------------------------------
 %% @doc
 %% @spec
@@ -124,9 +111,7 @@ attr_walk_return(Return) ->
 %%% Internal functions
 %%%===================================================================
 values_apply_fun_m(Node, Fun, AttrValues, Acc, Opts) ->
-    erl_syntax_traverse_m:erl_syntax_traverse_m(
-      erl_syntax_traverse:fun_return_to_monad(
-        values_apply_fun(Fun, AttrValues, Acc, Opts), Node)).
+      erl_syntax_walk_return:to_traverse_m(values_apply_fun(Fun, AttrValues, Acc, Opts), Node).
 
 values_apply_fun(Fun, AttrValues, Acc, Opts) when is_list(AttrValues) ->
     case maps:get(deep_attr, Opts, true) of
@@ -183,9 +168,9 @@ by_validator(Validator, Value, IsKey) ->
     update_return(Value, Return, Validator).
 
 by_validator_1(required, Value, IsKey) ->
-    erl_syntax_validator:required(Value, IsKey);
+    required(Value, IsKey);
 by_validator_1({default, Default}, Value, IsKey) ->
-    erl_syntax_validator:default(Value, Default, IsKey);
+    default(Value, Default, IsKey);
 by_validator_1([Validator|T], Value, IsKey) ->
     case by_validator(Validator, Value, IsKey) of
         {ok, Value1} ->
@@ -200,9 +185,9 @@ by_validator_1([Validator|T], Value, IsKey) ->
 by_validator_1(_Validator, _Value, false) ->
     skip;
 by_validator_1(Validator, Value, _IsKey) when is_atom(Validator) ->
-    erl_syntax_validator:Validator(Value);
+    apply(?MODULE, Validator, [Value]);
 by_validator_1({Validator, Args}, Value, _IsKey) when is_atom(Validator) ->
-    erl_syntax_validator:Validator(Value, Args);
+    apply(?MODULE, Validator, [Value, Args]);
 by_validator_1(Validator, Value, _IsKey) when is_function(Validator, 1) ->
     Validator(Value);
 
@@ -225,3 +210,42 @@ update_return(_Value, skip, _Validator) ->
     skip;
 update_return(Value, Other, Validator) -> 
     exit({invalid_validator_return_for, Validator, Value, Other}).
+
+%%%===================================================================
+%%% validator functions
+%%%===================================================================
+boolean(Bool) ->
+    erlang:is_boolean(Bool).
+
+number(Number) ->
+    erlang:is_number(Number).
+
+atom(Atom) ->
+    erlang:is_atom(Atom).
+
+list_of(Values, Validator) ->
+    list_of(Values, Validator, []).
+
+list_of([H|T], Validator, Acc) ->
+    case erl_syntax_options:by_validator(Validator, H, true) of
+        {ok, H1} ->
+            list_of(T, Validator, [H1|Acc]);
+        {error, Reason} ->
+            {error, Reason};
+        {warning, Reason} ->
+            {warning, Reason}
+    end;
+list_of([], _Validator, Acc) ->
+    {ok, lists:reverse(Acc)};
+list_of(_Other, _Validator, _Acc) ->
+    {error, invalid_list}.
+
+default(_Value, Default, false) ->
+    {ok, Default};
+default(Value, _Default, true) ->
+    {ok, Value}.
+
+required(_Value, false) ->
+    {error, required};
+required(Value, true) ->
+    {ok, Value}.

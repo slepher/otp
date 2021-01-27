@@ -36,8 +36,7 @@ SOURCES=erl_syntax.erl erl_prettypr.erl erl_syntax_lib.erl	\
     erl_syntax_base_m.erl erl_syntax_endo.erl erl_syntax_error_state.erl \
 	erl_syntax_return_m.erl erl_syntax_traverse_m.erl erl_syntax_walk_return.erl \
 	erl_syntax_options.erl erl_syntax_traverse.erl erl_syntax_traverse_lib.erl \
-	erl_syntax_validator.erl erl_syntax_wrapper.erl \
-	erl_syntax_compile_meta_transformer.erl
+	erl_syntax_wrapper.erl erl_syntax_compile_meta_transformer.erl
 
 INCLUDE_FILES = merl.hrl compile_meta.hrl erl_syntax_struct_name.hrl
 

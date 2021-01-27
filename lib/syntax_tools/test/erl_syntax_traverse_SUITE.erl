@@ -261,7 +261,7 @@ test_forms_with_attribute(_Config) ->
         erl_syntax_options:forms_with_attribute(
           fun(Attr, Acc, #{line := Line}) ->
                   Node = erl_syntax_traverse_lib:attribute_node(mark_1, Line, Attr),
-                  erl_syntax_options:attr_walk_return(#{node => Node, return => [Attr|Acc]})
+                  {[Node], [Attr|Acc]}
           end, [], Forms, mark, #{simplify_return => true}),
     Marks1 =
         erl_syntax_options:with_attribute(

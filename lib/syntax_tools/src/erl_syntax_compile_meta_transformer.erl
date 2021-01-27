@@ -41,14 +41,13 @@ format_error(Error) ->
 %%% parse options functions
 %%%===================================================================
 meta_options(Forms) ->
-    erl_syntax_traverse:with_attributes(
+    erl_syntax_options:with_attribute(
       fun(Opts, Acc) ->
               {Opts1, Warnings} = erl_syntax_traverse_lib:validate_options(fun compile_meta_options_validator/2, Opts),
               Warnings1 = erl_syntax_traverse_lib:update_option_warnings(erl_syntax_compile_meta, Warnings),
               Acc1 = merge_options(Acc, Opts1),
-              erl_syntax_walk_return:new(
-                #{node => ok, state => Acc1, warnings => Warnings1})
-      end, maps:new(), erl_syntax_compile_meta, Forms, #{formatter => erl_syntax_traverse}).
+              erl_syntax_walk_return:new(#{return => Acc1, warnings => Warnings1})
+      end, maps:new(), Forms, erl_syntax_compile_meta, #{formatter => ?MODULE, simplify_return => false}).
 
 merge_options(Options1, Options2) ->
     maps:fold(

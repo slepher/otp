@@ -233,20 +233,20 @@ map_m_1(F, Nodes, Opts) ->
 
 map_forms(Fun, Forms, Opts) ->
     Functions = forms_functions(Forms),
-    map_forms(Fun, Forms, Functions, erl_abs_traverse_m:return(new_grforms()), Opts).
+    map_forms(Fun, Forms, Functions, erl_abs_traverse_m:return(grforms_new()), Opts).
 
 map_forms(Fun, [{error, _Error} = Form|Tails], Functions, GRFormsM, Opts) ->
-    map_forms(Fun, Tails, Functions, append_to_grformsm(Form, GRFormsM), Opts);
+    map_forms(Fun, Tails, Functions, grforms_appendm(Form, GRFormsM), Opts);
 map_forms(Fun, [{warning, _Warning} = Form|Tails], Functions, GRFormsM, Opts) ->
-    map_forms(Fun, Tails, Functions, append_to_grformsm(Form, GRFormsM), Opts);
+    map_forms(Fun, Tails, Functions, grforms_appendm(Form, GRFormsM), Opts);
 map_forms(Fun, [{attribute, _Line, file, {File, _Line}} = Form|Tails], Functions, GRFormsM, Opts) ->
     erl_abs_traverse_m:then(
       erl_abs_traverse_m:update_file(File),
-      map_forms(Fun, Tails, Functions, append_to_grformsm(Form, GRFormsM), Opts));
+      map_forms(Fun, Tails, Functions, grforms_appendm(Form, GRFormsM), Opts));
 map_forms(Fun, [{eof, _Line} = Form|Tails], Functions, GRFormsM, Opts) ->
     erl_abs_traverse_m:then(
       erl_abs_traverse_m:eof(),
-      map_forms(Fun, Tails, Functions, append_to_grformsm(Form, GRFormsM), Opts));
+      map_forms(Fun, Tails, Functions, grforms_appendm(Form, GRFormsM), Opts));
 map_forms(Fun, [Form|Tails], Functions0, GRFormsM, Opts) ->
     erl_abs_traverse_m:bind(
       GRFormsM,
@@ -254,7 +254,7 @@ map_forms(Fun, [Form|Tails], Functions0, GRFormsM, Opts) ->
               erl_abs_traverse_m:bind(
                 erl_abs_traverse_m:catch_updated_nodes(apply_fun(Fun, Form, Opts)),
                 fun({_, false}) ->
-                        map_forms(Fun, Tails, Functions0, append_to_grformsm(Form, GRFormsM), Opts);
+                        map_forms(Fun, Tails, Functions0, grforms_appendm(Form, GRFormsM), Opts);
                    ({NewForms, true}) ->
                         %% get new functions after transformed.
                         FormFunctions = forms_functions([Form]),
@@ -293,50 +293,70 @@ apply_f(Fun, Form) when is_function(Fun, 2) ->
 %% =====================================================================
 %% grforms(grouped reversed forms) functions
 %% =====================================================================
-append_to_grformsm(Form, GRFormsM) ->
-    erl_abs_monad:lift_m(fun(GRForms) -> append_to_grforms(Form, GRForms) end, GRFormsM).
+grforms_appendm(Form, GRFormsM) ->
+    erl_abs_monad:lift_m(fun(GRForms) -> grforms_append(Form, GRForms) end, GRFormsM).
 
-new_grforms() ->
-    %% [Eof], [Function...], [Attribute...]}.
-    %% EGRForms, FGRForms, AGRForms.
-    {[], [], []}.
+grforms_new() ->
+    %% [Eof], [Function...], [Attribute...], [Module...]}.
+    %% ERForms, FRForms, ARForms, MForms.
+    {[], [], [], []}.
 
-append_to_grforms({attribute, _Line, spec, _SpecValue} = Spec, {EGRForms, FGRForms, AGRForms}) ->
-    {EGRForms, [Spec|FGRForms], AGRForms};
-append_to_grforms({function, _Line, _Name, _Arity, _Clauses} = Function, {EGRForms, FGRForms, AGRForms}) ->
-    {EGRForms, [Function|FGRForms], AGRForms};
-append_to_grforms({eof, _Line}, {[Eof], FGRForms, AGRForms}) ->
-    {[Eof], FGRForms, AGRForms};
-append_to_grforms({eof, _Line} = Eof, {[], FGRForms, AGRForms}) ->
-    {[Eof], FGRForms, AGRForms};
-append_to_grforms(Form, {EGRForms, [], AGRForms}) ->
-    {EGRForms, [], [Form|AGRForms]};
-append_to_grforms(Form, {EGRForms, FGRForms, AGRForms}) ->
-    {EGRForms, [Form|FGRForms], AGRForms}.
+grforms_to_forms({ERForms, FRForms, ARForms, MRForms}) ->
+    lists:reverse(MRForms) ++ lists:reverse(ARForms) ++ lists:reverse(FRForms) ++ ERForms.
 
-insert_into_grforms({attribute, _Line, file, _FileValue} = File, GRForms) ->
-    append_to_grforms(File, GRForms);
-insert_into_grforms({attribute, Line, export, Exports}, {EGRForms, FGRForms, AGRForms}) ->
-    Exports1 = remove_duplicated_exports(Exports, FGRForms),
-    Exports2 = remove_duplicated_exports(Exports1, AGRForms),
+grforms_append({attribute, _Line, module, _ModuleName} = Module, {[], [], [], MForms}) ->
+    {[], [], [], [Module|MForms]};
+grforms_append({attribute, _Line, file, _FileName} = File, {[], [], [], MForms}) ->
+    {[], [], [], [File|MForms]};
+grforms_append({attribute, _Line, file, _FileName} = File, {[], [], ARForms, MForms}) ->
+    {[], [], [File|ARForms], MForms};
+grforms_append({attribute, _Line, file, _FileName} = File, {[], FRForms, ARForms, MForms}) ->
+    {[], [File|FRForms], ARForms, MForms};
+grforms_append({attribute, _Line, spec, _SpecValue} = Spec, {ERForms, FRForms, ARForms, MRForms}) ->
+    {ERForms, [Spec|FRForms], ARForms, MRForms};
+grforms_append({function, _Line, _Name, _Arity, _Clauses} = Function, {ERForms, FRForms, ARForms, MRForms}) ->
+    {ERForms, [Function|FRForms], ARForms, MRForms};
+grforms_append({eof, _Line} = Eof, {[], FRForms, ARForms, MRForms}) ->
+    {[Eof], FRForms, ARForms, MRForms};
+grforms_append(Form, {[], [], ARForms, MRForms}) ->
+    {[], [], [Form|ARForms], MRForms};
+grforms_append(Form, {[], FRForms, ARForms, MRForms}) ->
+    {[], [Form|FRForms], ARForms, MRForms};
+grforms_append(Form, GRForms) ->
+    erlang:exit({insert_form_failed, Form, GRForms}).
+
+grforms_insert({attribute, _Line, file, _FileValue} = File, {ERForms, FRForms, ARForms, []}) ->
+    {ERForms, FRForms, ARForms, [File]};
+grforms_insert({attribute, _Line, file, _FileValue} = File, GRForms) ->
+    grforms_append(File, GRForms);
+grforms_insert({attribute, _Line1, module, _ModuleName} = Module,
+               {ERForms, FRForms, ARForms, [{attribute, _Line2, module, _ModuleName1}|MForms]}) ->
+    {ERForms, FRForms, ARForms, [Module|MForms]};
+grforms_insert({attribute, _Line1, module, _ModuleName} = Module, {ERForms, FRForms, ARForms, MForms}) ->
+    {ERForms, FRForms, ARForms, [Module|MForms]};
+grforms_insert({attribute, Line, export, Exports}, {ERForms, FRForms, ARForms, MRForms}) ->
+    Exports1 = remove_duplicated_exports(Exports, FRForms),
+    Exports2 = remove_duplicated_exports(Exports1, ARForms),
     case Exports2 of
         [] ->
-            {EGRForms, FGRForms, AGRForms};
+            {ERForms, FRForms, ARForms, MRForms};
         _ ->
             Export = {attribute, Line, export, Exports2},
-            {EGRForms, FGRForms, [Export|AGRForms]}
+            {ERForms, FRForms, [Export|ARForms], MRForms}
     end;
-insert_into_grforms({function, _Line1, Name, Arity, _Clauses} = Function, {EGRForms, FGRForms, AGRForms}) ->
-    FGRForms1 = insert_function_or_spec(function, Name, Arity, Function, FGRForms),
-    {EGRForms, FGRForms1, AGRForms};
-insert_into_grforms({attribute, _Line1, spec, {{Name, Arity}, _SpecType}} = Spec, {EGRForms, FGRForms, AGRForms}) ->
-    FGRForms1 = insert_function_or_spec(spec, Name, Arity, Spec, FGRForms),
-    {EGRForms, FGRForms1, AGRForms};
+grforms_insert({function, _Line1, Name, Arity, _Clauses} = Function, {ERForms, FRForms, ARForms, MRForms}) ->
+    FRForms1 = insert_function_or_spec(function, Name, Arity, Function, FRForms),
+    {ERForms, FRForms1, ARForms, MRForms};
+grforms_insert({attribute, _Line1, spec, {{Name, Arity}, _SpecType}} = Spec, {ERForms, FRForms, ARForms, MRForms}) ->
+    FRForms1 = insert_function_or_spec(spec, Name, Arity, Spec, FRForms),
+    {ERForms, FRForms1, ARForms, MRForms};
 
-insert_into_grforms({eof, _Line} = Eof, GRForms) ->
-    append_to_grforms(Eof, GRForms);
-insert_into_grforms(Attribute, {EGRForms, FGRForms, AGRForms}) ->
-    {EGRForms, FGRForms, [Attribute|AGRForms]}.
+grforms_insert({eof, _Line}, {[Eof], FRForms, ARForms, MRForms}) ->
+    {[Eof], FRForms, ARForms, MRForms};
+grforms_insert({eof, _Line} = Eof, {[], FRForms, ARForms, MRForms}) ->
+    {[Eof], FRForms, ARForms, MRForms};
+grforms_insert(Attribute, {ERForms, FRForms, ARForms, MRForms}) ->
+    {ERForms, FRForms, [Attribute|ARForms], MRForms}.
 
 remove_duplicated_exports(Exports1, [{attribute, _Line, export, Exports}|T]) ->
     Exports2 = Exports1 -- Exports,
@@ -362,12 +382,9 @@ insert_function_or_spec(Type, Name, Arity, Form1, [Form|GRForms], Tails, InitGRF
 insert_function_or_spec(_Type, _Name, _Arity, Form, [], _Tails, InitGRForms) ->
     [Form|InitGRForms].
 
-grforms_with_functions(Fun, {EGRForms, FGRForms, AGRForms}) ->
-    FGRForms1 = Fun(FGRForms),
-    {EGRForms, FGRForms1, AGRForms}.
-
-grforms_to_forms({EGRForms, FGRForms, AGRForms}) ->
-    lists:reverse(AGRForms) ++ lists:reverse(FGRForms) ++ EGRForms.
+grforms_with_functions(Fun, {ERForms, FRForms, ARForms, MRForms}) ->
+    FRForms1 = Fun(FRForms),
+    {ERForms, FRForms1, ARForms, MRForms}.
 %% =====================================================================
 %% grforms(grouped reversed forms) functions end
 %% =====================================================================
@@ -391,19 +408,20 @@ sort_forms(Forms) ->
 %% <li>eof_marker in new forms will be dropped if there is an eof_marker already exists in forms.</li>
 %% <li>eof_marker in new forms will insert at the end of forms if there is no eof_market in forms.</li>
 %% <li>if form is marked from other file (between -file(file1) and -file(file2)), do not change this mark.(not implemented)</li>
+%% <li>insert_forms does not changes the original forms order, but with some rules check.</li>
+%% <li>eof_marker should be the last element of original forms</li>
+%% <li>except file attribute, module should be the first element of original forms</li>
+%% <li>an error {insert_form_failed, Form, GRForms} is throwed when original forms check failed</li>
 %% </ul>
 %% @end
 -spec insert_forms([erl_syntax:syntaxTree()], [erl_syntax:syntaxTree()]) -> [erl_syntax:syntaxTree()].
 insert_forms(NewForms, Forms) ->
     Functions = forms_functions(Forms),
     NewFormsFunctions = forms_functions(NewForms),
-    GRForms = lists:foldl(fun append_to_grforms/2, new_grforms(), Forms),
+    GRForms = lists:foldl(fun grforms_append/2, grforms_new(), Forms),
     {_Functions, GRForms1, []} = insert_forms(NewForms, NewFormsFunctions, Functions, GRForms, []),
     grforms_to_forms(GRForms1).
 
-%% =====================================================================
-%% detect new forms functions
-%% =====================================================================
 forms_functions(Forms) ->
     forms_functions(Forms, ordsets:new()).
 
@@ -427,7 +445,7 @@ forms_functions(Forms, Functions0) ->
 %% after merge forms, Heads is reversed order, tails is original order.
 insert_forms(NewForms, NewFormsFucntions, Functions, GRForms, Tails) ->
     {Functions1, NewForms1, GRForms1, Tails1} = merge_functions(NewForms, NewFormsFucntions, Functions, GRForms, Tails),
-    GRForms2 = lists:foldl(fun insert_into_grforms/2, GRForms1, NewForms1),
+    GRForms2 = lists:foldl(fun grforms_insert/2, GRForms1, NewForms1),
     {Functions1, GRForms2, Tails1}.
 
 %% =====================================================================
@@ -450,8 +468,8 @@ merge_functions(NewForms, NewFormsFucntions, Functions, GRForms, Tails) ->
                           Form1 = update_call_name('__original__', NewName, Arity, Form),
                           GRFormsAcc1 =
                               grforms_with_functions(
-                                fun(FGRForms) ->
-                                        update_function_name(Name, Arity, NewName, FGRForms)
+                                fun(FRForms) ->
+                                        update_function_name(Name, Arity, NewName, FRForms)
                                 end, GRFormsAcc),
                           TailsAcc1 = update_function_name(Name, Arity, NewName, TailsAcc),
                           {ordsets:add_element({NewName, Arity}, FunctionsAcc), [Form1|NewFormsAcc], GRFormsAcc1, TailsAcc1};

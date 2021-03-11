@@ -457,7 +457,6 @@ new_variable_names(N, Names, R, F, S) when N > 0 ->
 new_variable_names(0, Names, _, _, _) ->
     Names.
 
-
 %% =====================================================================
 %% @spec annotate_bindings(Tree::syntaxTree(),
 %%                         Bindings::ordset(atom())) -> syntaxTree()

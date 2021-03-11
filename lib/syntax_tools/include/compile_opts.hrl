@@ -1,0 +1,4 @@
+-ifndef(ERL_ABS_COMPILE_OPTS).
+-define(ERL_ABS_COMPILE_OPTS, true).
+-compile({parse_transform, erl_abs_compile_opts_transform}).
+-endif.

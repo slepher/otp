@@ -38,6 +38,12 @@ EDOC_REF3_FILES = \
 	erl_recomment.xml \
 	erl_syntax.xml \
 	erl_syntax_lib.xml \
+        erl_abs.xml \
+	erl_abs_lib.xml \
+	erl_abs_traverse_m.xml \
+	erl_abs_error.xml \
+	erl_abs_return.xml \
+	erl_abs_walk_return.xml \
 	merl.xml \
 	merl_transform.xml \
 	prettypr.xml

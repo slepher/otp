@@ -42,6 +42,12 @@
   <xi:include href="erl_recomment.xml"/>
   <xi:include href="erl_syntax.xml"/>
   <xi:include href="erl_syntax_lib.xml"/>
+  <xi:include href="erl_abs.xml"/>
+  <xi:include href="erl_abs_lib.xml"/>
+  <xi:include href="erl_abs_traverse_m.xml"/>
+  <xi:include href="erl_abs_error.xml"/>
+  <xi:include href="erl_abs_return.xml"/>
+  <xi:include href="erl_abs_walk_return.xml"/>
   <xi:include href="merl.xml"/>
   <xi:include href="merl_transform.xml"/>
   <xi:include href="prettypr.xml"/>

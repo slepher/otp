@@ -87,6 +87,7 @@
 	 abstract/1,
 	 concrete/1,
 	 revert/1,
+	 revert_root/1,
 	 revert_forms/1,
 	 subtrees/1,
 	 make_tree/2,
@@ -7448,6 +7449,7 @@ revert(Node) ->
 %% result of `revert_root(T)' should also be completely backwards
 %% compatible.
 
+-spec revert_root(syntaxTree()) -> syntaxTree().
 revert_root(Node) ->
     case type(Node) of
         annotated_type ->

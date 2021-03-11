@@ -31,8 +31,12 @@ ERL_COMPILE_FLAGS += +nowarn_shadow_vars +warn_unused_import #-Werror # +warn_mi
 SOURCES=erl_syntax.erl erl_prettypr.erl erl_syntax_lib.erl	\
 	erl_comment_scan.erl erl_recomment.erl epp_dodger.erl	\
 	prettypr.erl merl.erl merl_transform.erl
+	erl_abs_monad.erl erl_abs_lib.erl \
+        erl_abs_endo.erl erl_abs_error.erl \
+	erl_abs_return.erl erl_abs_traverse_m.erl erl_abs_walk_return.erl \
+	erl_abs.erl erl_abs_syntax.erl erl_abs_compile_opts_transform.erl
 
-INCLUDE_FILES = merl.hrl
+INCLUDE_FILES = merl.hrl abs_struct_name.hrl compile_opts.hrl
 
 OBJECTS=$(SOURCES:%.erl=$(EBIN)/%.$(EMULATOR)) $(APP_TARGET) $(APPUP_TARGET)
 

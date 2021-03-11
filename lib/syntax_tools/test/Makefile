@@ -7,7 +7,10 @@ include $(ERL_TOP)/make/$(TARGET)/otp.mk
 
 MODULES= \
 	syntax_tools_SUITE \
-	merl_SUITE
+	merl_SUITE \
+	erl_abs_test_lib \
+	erl_abs_sample_transformer_1 \
+	erl_abs_SUITE
 
 ERL_FILES= $(MODULES:%=%.erl)
 
@@ -26,7 +29,7 @@ RELSYSDIR = $(RELEASE_PATH)/syntax_tools_test
 # ----------------------------------------------------
 
 ERL_MAKE_FLAGS += 
-ERL_COMPILE_FLAGS +=
+ERL_COMPILE_FLAGS += -I$(ERL_TOP)/lib/syntax_tools/include
 
 EBIN = .
 

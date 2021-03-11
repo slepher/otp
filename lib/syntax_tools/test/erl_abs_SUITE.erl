@@ -136,14 +136,14 @@ test_simple_map(_Config) ->
     Node0 = {atom, 1, ok},
     Monad =
         erl_abs:map_m(
-            fun(_Node, #{}) ->
-                erl_abs_traverse_m:return(ok)
-            end, Node0, #{traverse => pre}),
+          fun(_Node, #{}) ->
+                  erl_abs_traverse_m:return(ok)
+          end, Node0, #{traverse => pre}),
     erl_abs_traverse_m:bind(
-        erl_abs_traverse_m:listen_updated(Monad),
-        fun(Updated) ->
-            ?assertEqual(false, Updated)
-        end),
+      erl_abs_traverse_m:listen_updated(Monad),
+      fun(Updated) ->
+              ?assertEqual(false, Updated)
+      end),
     Return = erl_abs_return:simplify(erl_abs_traverse_m:eval(Monad, erl_abs, ok)),
     ?assertEqual(Node0, Return),
     ok.
@@ -269,7 +269,7 @@ test_validator(_Config) ->
                   d => {default, 10},
                   f => [boolean, {default_key, g}],
                   g => [boolean, {default, false}]
-                  },
+                 },
     Validated = erl_abs_lib:validate(Validator, [a, {b,[c,d]}, {b, c, d}, e]),
     Return = #{a => true, b => [c, d], d => 10, f => false, g => false},
     Warnings = [{invalid_option_value, {b, c, d}}, {unexpected_option_keys, [e]}],
@@ -309,38 +309,39 @@ test_traverse_m_updated(Config) ->
     Forms = proplists:get_value(forms, Config),
     TraverseM =
         erl_abs:map_m(
-            fun(_Node, #{}) ->
-                erl_abs_traverse_m:return(ok)
-            end, Forms, #{traverse => post}),
+          fun(_Node, #{}) ->
+                  erl_abs_traverse_m:return(ok)
+          end, Forms, #{traverse => post}),
     TraverseM1 =
         erl_abs_monad:lift_m(
-            fun({Return, Updated}) ->
-                ?assertEqual({Return, false}, {Forms, Updated}),
-                Return
-            end, erl_abs_traverse_m:listen_updated(TraverseM)),
+          fun({Return, Updated}) ->
+                  ?assertEqual({Return, false}, {Forms, Updated}),
+                  Return
+          end, erl_abs_traverse_m:listen_updated(TraverseM)),
     erl_abs_traverse_m:eval(TraverseM1, erl_abs, #{}).
 
 test_map_forms(Config) ->
     Forms = erl_abs_test_lib:test_module_forms(erl_abs_sample_2, Config),
     Forms1M = 
         erl_abs:map_m(
-            fun({attribute, _Line, mark, mark_01}) ->
-                erl_abs_traverse_m:node(
-                    erl_abs_lib:gen_function(test,
-                        ?Q(["fun(ok_1) ->",
-                            "   ok_1;"
-                            "(Other) ->",
-                            "   '__original__'(Other)",
-                            "end"])));
-                (_Node) ->
-                    erl_abs_traverse_m:return(ok)
-            end, Forms, #{traverse => form}),
+          fun({attribute, _Line, mark, mark_01}) ->
+                  erl_abs_traverse_m:node(
+                    erl_abs_lib:gen_function(
+                      test,
+                      ?Q(["fun(ok_1) ->",
+                          "   ok_1;"
+                          "(Other) ->",
+                          "   '__original__'(Other)",
+                          "end"])));
+             (_Node) ->
+                  erl_abs_traverse_m:return(ok)
+          end, Forms, #{traverse => form}),
     Forms1 = erl_abs_return:simplify(erl_abs_traverse_m:eval(Forms1M, erl_abs, ok)),
     Result = erl_abs_test_lib:compile_test_forms(Forms1),
     erl_abs_return:with_error(
-        fun(ErrorState) ->
-            ?assertEqual(#{}, erl_abs_error:printable(ErrorState))
-        end, Result),
+      fun(ErrorState) ->
+              ?assertEqual(#{}, erl_abs_error:printable(ErrorState))
+      end, Result),
     Value1 = erl_abs_sample_2:test(ok_1),
     Value2 = erl_abs_sample_2:test(ok_2),
     Value3 = erl_abs_sample_2:test(ok_3),

@@ -61,19 +61,26 @@
 
 -type traverse_opts() :: #{traverse => traverse_style(),
                            parse_transform => boolean(),
-                           simplify_return => boolean(), parent => atom(),
+                           simplify_return => boolean(),
+                           parent => atom(),
                            children => boolean(),
-                           sequence_children => fun((any()) -> any()),
-                           transform => fun((any()) -> any()),
+                           sequence_children => sequence_children(),
+                           transform => transform(),
                            syntax_lib => module(),
-                           node => node_type(), formatter => module() }.
+                           node => node_type(),
+                           formatter => module()}.
 
--type traverse_error_state() :: #{file => string(), errors => traverse_return_error(), warnings => traverse_return_error(),
+-type sequence_children() :: fun((any()) -> any()).
+-type transform() :: fun((any()) -> any()).
+
+-type traverse_error_state() :: #{file => string(),
+                                  errors => traverse_return_error(),
+                                  warnings => traverse_return_error(),
                                   file_errors => parse_transform_return_error(), 
                                   file_warnings => parse_transform_return_error()}.
 
 -type node_type() :: attribute | pattern | expression | guard | form.
--type traverse_style() :: traverse_step() | all | list.
+-type traverse_style() :: traverse_step() | all | form.
 -type traverse_step() :: pre | post | leaf.
 -type traverse_attr() :: #{step := traverse_step(), node := node_type()}.
 -type traverse_fun_return() :: #{'__struct__' := erl_syntax_traverse_fun_return, 
@@ -269,7 +276,8 @@ map_forms(Fun, [Form|Tails], Functions0, GRFormsM, Opts) ->
 map_forms(_Fun, [], _Acc, FormsM, _Opts) ->
     erl_abs_monad:lift_m(fun grforms_to_forms/1, FormsM).
 
-apply_fun(Fun, Form, #{traverse := form}) ->
+apply_fun(Fun, Form, #{traverse := form} = Opts) ->
+    SyntaxLib = syntax_lib(Opts),
     TraverseM =
         case apply_f(Fun, Form) of
             #{?STRUCT_KEY := ?TRAVERSE_M} = Traverse ->
@@ -281,7 +289,7 @@ apply_fun(Fun, Form, #{traverse := form}) ->
             Return ->
                 erl_abs_traverse_m:erl_abs_traverse_m(erl_abs_walk_return:new(Return))
         end,
-    erl_abs_traverse_m:update_line(erl_syntax:get_pos(Form), TraverseM);
+    erl_abs_traverse_m:update_line(SyntaxLib:get_pos(Form), TraverseM);
 apply_fun(Fun, Form, Opts) ->
     map_m_2(Fun, Form, Opts).
 
@@ -585,42 +593,32 @@ map_m_2(F, NodeA, #{} = Opts) ->
     SyntaxLib = syntax_lib(Opts),
     map_m_tree_node(F, NodeA, Opts, SyntaxLib).
 
-map_m_tree_node(_F, {error, Reason}, _Opts, _SyntaxLib) ->
-    erl_abs_traverse_m:nodes([{error, Reason}]);
 map_m_tree_node(F, NodeA, Opts, SyntaxLib) ->
     %% it's not a good way to mix attr with opts.
     Attr = maps:without([traverse], Opts),
-    case SyntaxLib:is_file(NodeA) of
-        false ->
-            NodeType = SyntaxLib:node_type(NodeA, Opts),
-            PreType = 
-                case SyntaxLib:subtrees(NodeA, Opts) of
-                    [] ->
-                        leaf;
-                    _Subtrees ->
-                        pre
-                end,
-            erl_abs_traverse_m:bind_continue_nodes(
-              apply_f(F, NodeA, Attr#{step => PreType, node => NodeType}, SyntaxLib),
-              fun(NodeB) ->
-                      case SyntaxLib:tps(NodeB, Opts) of
-                          {_Type, _Pos, []} ->
-                              erl_abs_traverse_m:insert_nodes([NodeB]);
-                          {Parent, _Pos, Subtrees} ->
-                              erl_abs_traverse_m:bind(
-                                map_m_children(F, NodeB, Subtrees, Opts#{parent => Parent}, SyntaxLib),
-                                fun(NodeC) ->
-                                        erl_abs_traverse_m:set_continue(
-                                          apply_f(F, NodeC, Attr#{step => post, node => NodeType}, SyntaxLib), false)
-                                end)
-                      end
-              end);
-        {file, File} ->
-            erl_abs_traverse_m:then(
-              erl_abs_traverse_m:update_file(File),
-              apply_f(F, NodeA, Attr#{step => leaf, node => file}, SyntaxLib)
-             )
-    end.
+    NodeType = SyntaxLib:node_type(NodeA, Opts),
+    PreType =
+        case SyntaxLib:subtrees(NodeA, Opts) of
+            [] ->
+                leaf;
+            _Subtrees ->
+                pre
+        end,
+    erl_abs_traverse_m:bind_continue_nodes(
+      apply_f(F, NodeA, Attr#{step => PreType, node => NodeType}, SyntaxLib),
+      fun(NodeB) ->
+              case SyntaxLib:tps(NodeB, Opts) of
+                  {_Type, _Pos, []} ->
+                      erl_abs_traverse_m:insert_nodes([NodeB]);
+                  {Parent, _Pos, Subtrees} ->
+                      erl_abs_traverse_m:bind(
+                        map_m_children(F, NodeB, Subtrees, Opts#{parent => Parent}, SyntaxLib),
+                        fun(NodeC) ->
+                                erl_abs_traverse_m:set_continue(
+                                  apply_f(F, NodeC, Attr#{step => post, node => NodeType}, SyntaxLib), false)
+                        end)
+              end
+      end).
 
 apply_f(F, Node, Attr, SyntaxLib) ->
     Line = SyntaxLib:get_pos(Node),

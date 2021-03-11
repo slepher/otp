@@ -112,7 +112,7 @@ groups() ->
 %% @end
 %%--------------------------------------------------------------------
 all() ->
-    [test_reduce, test_map_with_state_node, test_map_with_state, test_map_spec, test_map_type,
+    [test_simple_map, test_reduce, test_map_with_state_node, test_map_with_state, test_map_spec, test_map_type,
      test_reduce_attr, test_with_formatter, 
      test_options, test_validator, test_with_attribute, test_forms_with_attribute,
      test_traverse_m_updated, test_map_forms].
@@ -132,6 +132,22 @@ all() ->
 %% Comment = term()
 %% @end
 %%--------------------------------------------------------------------
+test_simple_map(_Config) ->
+    Node0 = {atom, 1, ok},
+    Monad =
+        erl_abs:map_m(
+            fun(_Node, #{}) ->
+                erl_abs_traverse_m:return(ok)
+            end, Node0, #{traverse => pre}),
+    erl_abs_traverse_m:bind(
+        erl_abs_traverse_m:listen_updated(Monad),
+        fun(Updated) ->
+            ?assertEqual(false, Updated)
+        end),
+    Return = erl_abs_return:simplify(erl_abs_traverse_m:eval(Monad, erl_abs, ok)),
+    ?assertEqual(Node0, Return),
+    ok.
+
 test_reduce(Config) ->
     Forms = proplists:get_value(forms, Config),
     Baseline = erl_abs_test_lib:get_baseline(function_base, Forms),
@@ -145,7 +161,7 @@ test_reduce(Config) ->
              (_Node, Acc, #{}) ->
                   Acc
           end, 0, Forms, #{formatter => ?MODULE, traverse => pre, simplify_return => false}),
-    #{'__struct__' := ?RETURN_FAIL, error := Error} = ReturnM,
+    #{'__struct__' := ?RETURN_OK, error := Error} = ReturnM,
     FileWarnings = [{File, [{5, ?MODULE, mark_1}]}],
     FileErrors = [{File, [{2, ?MODULE, mark_error_1}]}],
     ?assertMatch({FileErrors, FileWarnings},
@@ -216,8 +232,9 @@ test_reduce_attr(Config) ->
                   {error, mark_error_0};
              (_Node, Acc, #{}) ->
                   Acc
-          end, 0, Forms, #{formatter => ?MODULE, traverse => list, simplify_return => false}),
+          end, 0, Forms, #{formatter => ?MODULE, traverse => form, simplify_return => false}),
     #{'__struct__' := ?RETURN_OK, error := Error} = ReturnM,
+    io:format("errors is ~p~n", [erl_abs_error:printable(Error)]),
     FileWarnings = [{File, [{2, ?MODULE, mark_0}]}],
     FileErrors = [{File, [{1, ?MODULE, mark_error_0}]}],
     ?assertMatch({FileErrors, FileWarnings}, erl_abs_test_lib:realize_with_baseline(Baseline, Error)),
@@ -297,18 +314,17 @@ test_traverse_m_updated(Config) ->
             end, Forms, #{traverse => post}),
     TraverseM1 =
         erl_abs_monad:lift_m(
-            fun({{Return, Nodes}, Updated}) ->
-                ?assertEqual(false, Updated),
-                ?assertEqual(Return, Nodes),
+            fun({Return, Updated}) ->
+                ?assertEqual({Return, false}, {Forms, Updated}),
                 Return
-            end, erl_abs_traverse_m:listen_updated(erl_abs_traverse_m:listen_nodes(TraverseM))),
+            end, erl_abs_traverse_m:listen_updated(TraverseM)),
     erl_abs_traverse_m:eval(TraverseM1, erl_abs, #{}).
 
 test_map_forms(Config) ->
     Forms = erl_abs_test_lib:test_module_forms(erl_abs_sample_2, Config),
     Forms1M = 
-        erl_abs_lib:map_forms(
-            fun({attribute, Line, mark, mark_01}) ->
+        erl_abs:map_m(
+            fun({attribute, _Line, mark, mark_01}) ->
                 erl_abs_traverse_m:node(
                     erl_abs_lib:gen_function(test,
                         ?Q(["fun(ok_1) ->",
@@ -318,9 +334,8 @@ test_map_forms(Config) ->
                             "end"])));
                 (_Node) ->
                     erl_abs_traverse_m:return(ok)
-            end, Forms),
+            end, Forms, #{traverse => form}),
     Forms1 = erl_abs_return:simplify(erl_abs_traverse_m:eval(Forms1M, erl_abs, ok)),
-    io:format("forms1 is ~ts~n",[erl_abs_lib:ast_safe_to_string(Forms1)]),
     Result = erl_abs_test_lib:compile_test_forms(Forms1),
     erl_abs_return:with_error(
         fun(ErrorState) ->

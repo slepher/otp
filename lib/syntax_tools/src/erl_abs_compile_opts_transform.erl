@@ -18,7 +18,7 @@
 parse_transform(BaseForms, Opts) ->
     OptsAst = erl_abs_lib:abstract_form(Opts),
     CompileOptsForms = erl_abs_lib:gen_exported_function(compile_opts, OptsAst),
-    erl_abs_lib:insert_forms(CompileOptsForms, BaseForms).
+    erl_abs:insert_forms(CompileOptsForms, BaseForms).
 
 format_error(Error) ->
     erl_abs:format_error(Error).

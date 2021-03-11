@@ -59,7 +59,8 @@
 -export([with_error/2, catch_fail/2, set_fail/1]).
 -export([get/0, put/1, modify/1]).
 -export([set_continue/1, set_continue/2, listen_continue/1, listen_updated/1]).
--export([listen/1, listen_nodes/1, set_updated/1, pop_nodes/1, catch_nodes/1, as_node/1, node/1, nodes/1]).
+-export([listen/1, listen_nodes/1, set_updated/1, pop_nodes/1, catch_updated_nodes/1, as_node/1, node/1, nodes/1,
+         insert_node/1, insert_nodes/1]).
 -export([with_formatter/2]).
 -export([warning/1, warnings/1, formatted_warnings/1, error/1, errors/1, formatted_errors/1]).
 -export([update_file/1, eof/0, update_line/2]).
@@ -360,17 +361,23 @@ pop_nodes(MA) ->
               update_m_state(StateM, #{return => erl_abs_endo:run(Nodes), nodes => erl_abs_endo:endo([])})
       end, MA).
 
-catch_nodes(MA) ->
-    pop_nodes(catch_fail(fun() -> erl_abs_traverse_m:return(ok) end, MA)).
+catch_updated_nodes(MA) ->
+   listen_updated(pop_nodes(catch_fail(fun() -> erl_abs_traverse_m:set_updated(erl_abs_traverse_m:return(ok)) end, MA))).
 
 node(Node) ->
     then(nodes([Node]), return(Node)).
 
 nodes(Nodes) ->
+    set_updated(insert_nodes(Nodes)).
+
+insert_node(Node) ->
+    insert_nodes([Node]).
+
+insert_nodes(Nodes) ->
     Inner =
         fun(_Formatter, State, Error) ->
                 state_ok(#{return => Nodes, state => State, error => Error,
-                           nodes => erl_abs_endo:endo(Nodes), updated => true})
+                           nodes => erl_abs_endo:endo(Nodes)})
         end,
     new(Inner).
 %%%===================================================================

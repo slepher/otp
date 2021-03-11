@@ -19,6 +19,7 @@
 -export([mapfold/3, mapfold/4]).
 -export([without_errors/1]).
 -export([map_m/3]).
+-export([sort_forms/1, insert_forms/2]).
 -export([format_error/1]).
 
 -type traverse_node() :: tuple().
@@ -204,13 +205,295 @@ transform_return(Return, Opts) ->
     end.
 
 without_errors(Forms) ->
-    map(fun(Node, #{}) -> Node end, Forms, #{traverse => list, formatter => ?MODULE, simplify_return => false}).
+    map(fun(Node, #{}) -> Node end, Forms, #{traverse => form, formatter => ?MODULE, simplify_return => false}).
 
 -spec map_m(traverse_fun(), Node, traverse_opts()) -> erl_abs_return:struct(Node).
-map_m(F, Nodes, Opts) ->
+map_m(F, Nodes, Opts) when is_list(Nodes) ->
+    F1 = up_f_by_traverse(F, Opts),
+    case is_forms(Nodes) of
+        true ->
+            map_forms(F1, Nodes, Opts);
+        false ->
+            map_m_2(F, Nodes, Opts)
+    end;
+map_m(F, Node, Opts) ->
     NF = up_f_by_traverse(F, Opts),
+    map_m_2(NF, Node, Opts).
+
+-spec map_forms(fun((erl_syntax:syntaxTree()) -> erl_abs_traverse_m:struct(_A)), [erl_syntax:syntaxTree()], #{}) ->
+                       erl_abs_traverse_m:struct(erl_syntax:syntaxTree()).
+%% if a list variable is reversed, there is a R suffix after variable name.
+%% if a variable is a monad, there is a M suffix after variable name.
+map_forms(Fun, Forms, Opts) ->
+    Functions = forms_functions(Forms),
+    map_forms(Fun, Forms, Functions, erl_abs_traverse_m:return({[], []}), Opts).
+
+map_forms(Fun, [{error, _Error} = Form|Tails], Functions, HeadsRM, Opts) ->
+    map_forms(Fun, Tails, Functions, append_to_headsrm(Form, HeadsRM), Opts);
+map_forms(Fun, [{warning, _Error} = Form|Tails], Functions, HeadsRM, Opts) ->
+    map_forms(Fun, Tails, Functions, append_to_headsrm(Form, HeadsRM), Opts);
+map_forms(Fun, [{attribute, _Line, file, {File, _Line}} = Form|Tails], Functions, HeadsRM, Opts) ->
+    erl_abs_traverse_m:then(
+      erl_abs_traverse_m:update_file(File),
+      map_forms(Fun, Tails, Functions, append_to_headsrm(Form, HeadsRM), Opts));
+map_forms(Fun, [{eof, _Line} = Form|Tails], Functions, HeadsRM, Opts) ->
+    erl_abs_traverse_m:then(
+      erl_abs_traverse_m:eof(),
+      map_forms(Fun, Tails, Functions, append_to_headsrm(Form, HeadsRM), Opts));
+map_forms(Fun, [Form|Tails], Functions0, HeadsRM, Opts) ->
     erl_abs_traverse_m:bind(
-      erl_abs_traverse_m:listen_nodes(map_m_1(NF, Nodes, Opts)),
+      HeadsRM,
+      fun(HeadsR) ->
+              erl_abs_traverse_m:bind(
+                erl_abs_traverse_m:catch_updated_nodes(apply_fun(Fun, Form, Opts)),
+                fun({_, false}) ->
+                        map_forms(Fun, Tails, Functions0, append_to_headsrm(Form, HeadsRM), Opts);
+                   ({NewForms, true}) ->
+                        NewFormsFunctions = new_forms_functions(Form, NewForms),
+                        {Functions1, HeadsR1, Tails2} =
+                            insert_forms(NewForms, NewFormsFunctions, Functions0, HeadsR, Tails),
+                        map_forms(Fun, Tails2, Functions1, erl_abs_traverse_m:return(HeadsR1), Opts)
+                end)
+      end);
+map_forms(_Fun, [], _Acc, FormsM, _Opts) ->
+    erl_abs_monad:lift_m(
+      fun({FHeadsR, AHeadsR}) ->
+              lists:reverse(AHeadsR) ++ lists:reverse(FHeadsR)
+      end, FormsM).
+
+append_to_headsrm(Form, HeadsRM) ->
+    erl_abs_monad:lift_m(fun(HeadsR) -> append_to_headsr(Form, HeadsR) end, HeadsRM).
+
+append_to_headsr({attribute, _Line, spec, _SpecValue} = Spec, {FHeadsR, AHeadsR}) ->
+    {[Spec|FHeadsR], AHeadsR};
+append_to_headsr({function, _Line, _Name, _Arity, _Clauses} = Function, {FHeadsR, AHeadsR}) ->
+    {[Function|FHeadsR], AHeadsR};
+append_to_headsr({eof, _Line} = Eof, {FHeadsR, AHeadsR}) ->
+    {[Eof|FHeadsR], AHeadsR};
+append_to_headsr(Form, {[], AHeadsR}) ->
+    {[], [Form|AHeadsR]};
+append_to_headsr(Form, {FHeadsR, AHeadsR}) ->
+    {[Form|FHeadsR], AHeadsR}.
+
+apply_fun(Fun, Form, #{traverse := form}) ->
+    TraverseM =
+        case apply_f(Fun, Form) of
+            #{?STRUCT_KEY := ?TRAVERSE_M} = Traverse ->
+                Traverse;
+            #{?STRUCT_KEY := ?RETURN_OK} = Return ->
+                erl_abs_traverse_m:erl_abs_traverse_m(Return);
+            #{?STRUCT_KEY := ?RETURN_FAIL} = Return ->
+                erl_abs_traverse_m:erl_abs_traverse_m(Return);
+            Return ->
+                erl_abs_traverse_m:erl_abs_traverse_m(erl_abs_walk_return:new(Return))
+        end,
+    erl_abs_traverse_m:update_line(erl_syntax:get_pos(Form), TraverseM);
+apply_fun(Fun, Form, Opts) ->
+    map_m_1(Fun, Form, Opts).
+
+apply_f(Fun, Form) when is_function(Fun, 1) ->
+    Fun(Form);
+apply_f(Fun, Form) when is_function(Fun, 2) ->
+    Fun(Form, #{}).
+
+%% =====================================================================
+%% detect new forms functions
+%% =====================================================================
+new_forms_functions(Form, NewForms) ->
+    FormFunctions = forms_functions([Form]),
+    NewFormsFunctions = forms_functions(NewForms),
+    ordsets:subtract(NewFormsFunctions, FormFunctions).
+
+forms_functions(Forms) ->
+    forms_functions(Forms, ordsets:new()).
+
+forms_functions(Forms, Functions0) ->
+    lists:foldl(
+      fun({function, _Line, Name, Arity, _Clauses}, Acc) ->
+              ordsets:add_element({Name, Arity}, Acc);
+         (_Node, Acc) ->
+              Acc
+      end, Functions0, Forms).
+
+%% @spec sort_forms([erl_syntax:syntaxTree()]) -> [erl_syntax:syntaxTree()]
+%% @doc sort forms to valid order, same as insert_forms(Forms, []).
+%% @see insert_forms/2.
+-spec sort_forms([erl_syntax:syntaxTree()]) -> [erl_syntax:syntaxTree()].
+sort_forms(Forms) ->
+    insert_forms(Forms, []).
+
+%% @spec insert_forms([erl_syntax:syntaxTree()], [erl_syntax:syntaxTree()]) -> [erl_syntax:syntaxTree()]
+%% @doc insert new forms to froms with order fillow these rules
+%% <ul>
+%% <li>rename functions in forms which function has '__original__' call in it with same name and arity in new forms.</li>
+%% <li>'__original__'(Args1, Args2, ...) will be transformed to RenamedFunction(Args1, Args2, ...).</li>
+%% <li>after rename, it dose not matter function or spec with duplicated name and arity, lint will get these errors.</li>
+%% <li>attribute in new forms will insert before first spec or function or eof.</li>
+%% <li>spec in new forms will insert before function with same name and arity or eof.</li>
+%% <li>function in new forms will insert after spec with same name and arity or insert before eof.</li>
+%% <li>eof_marker in new forms will be dropped if there is an eof_marker already exists in forms.</li>
+%% <li>eof_marker in new forms will insert at the end of forms if there is no eof_market in forms.</li>
+%% <li>if form is marked from other file (between -file(file1) and -file(file2)), do not change this mark.(not implemented)</li>
+%% </ul>
+%% @end
+-spec insert_forms([erl_syntax:syntaxTree()], [erl_syntax:syntaxTree()]) -> [erl_syntax:syntaxTree()].
+insert_forms(NewForms, Forms) ->
+    Functions = forms_functions(Forms),
+    NewFormsFunctions = forms_functions(NewForms),
+    HeadsR = lists:foldl(fun append_to_headsr/2, {[], []}, Forms),
+    {_Functions, {FHeadsR, AHeadsR}, Tails} = insert_forms(NewForms, NewFormsFunctions, Functions, HeadsR, []),
+    lists:reverse(AHeadsR) ++ lists:reverse(FHeadsR) ++ Tails.
+
+%% merge forms rule
+%% 1. rename functions which generated functions has '__original__' call in it with same name and arity.
+%% 2. rename spec if new spec is generated
+%% 3. for map_forms/2, code does not know how forms will change in tails
+%$ 4. if it's need to adjust new generated form order, only forms in heads should be affeted
+%% 5. new generated attribute should insert before first -spec in heads
+%% 6. new generated spec should insert before function with same name and arity in heads
+%% 7. new generated function should insert after spec with same name and arity in heads.
+%% 8. if file of new generated form is different from oldone, file attribute should be created to mark file.
+%% new_forms, heads, tails is original order.
+%% after merge forms, Heads is reversed order, tails is original order.
+insert_forms(NewForms, NewFormsFucntions, Functions, HeadsR, Tails) ->
+    {Functions1, NewForms1, HeadsR1, Tails1} = merge_functions(NewForms, NewFormsFucntions, Functions, HeadsR, Tails),
+    HeadsR2 = lists:foldl(fun form_insert_heads/2, HeadsR1, NewForms1),
+    {Functions1, HeadsR2, Tails1}.
+
+%% =====================================================================
+%% merge functions
+%% =====================================================================
+merge_functions(NewForms, NewFormsFucntions, Functions, {FHeadsR, AHeadsR}, Tails) ->
+    ExistsNewFunctions =
+        ordsets:from_list(
+          lists:filter(
+            fun(NameArity) ->
+                    ordsets:is_element(NameArity, Functions)
+            end, ordsets:to_list(NewFormsFucntions))),
+    Functions1 = ordsets:union(Functions, NewFormsFucntions),
+    {Functions2, NewFormsR2, FHeadsR1, Tails1} =
+        lists:foldl(
+          fun({function, _Line, Name, Arity, _Clauses} = Form, {FunctionsAcc, NewFormsAcc, HeadsRAcc, TailsAcc}) ->
+                  case ordsets:is_element({Name, Arity}, ExistsNewFunctions) andalso is_renamed(Arity, Form) of
+                      true ->
+                          NewName = new_function_name(Name, Arity, FunctionsAcc),
+                          Form1 = update_call_name('__original__', NewName, Arity, Form),
+                          HeadsRAcc1 = update_function_name(Name, Arity, NewName, HeadsRAcc),
+                          TailsAcc1 = update_function_name(Name, Arity, NewName, TailsAcc),
+                          {ordsets:add_element({NewName, Arity}, FunctionsAcc), [Form1|NewFormsAcc], HeadsRAcc1, TailsAcc1};
+                      false ->
+                          {FunctionsAcc, [Form|NewFormsAcc], HeadsRAcc, TailsAcc}
+                  end;
+             (Form, {FunctionsAcc, NewFormsAcc, HeadsAcc, TailsAcc}) ->
+                  {FunctionsAcc, [Form|NewFormsAcc], HeadsAcc, TailsAcc}
+          end, {Functions1, [], FHeadsR, Tails}, NewForms),
+    {Functions2, lists:reverse(NewFormsR2), {FHeadsR1, AHeadsR}, Tails1}.
+
+is_renamed(Arity, Form) ->
+    erl_abs:reduce(
+      fun({call, _Line1, {atom, _Line2, '__original__'}, Arguments}, Acc1, #{}) ->
+              case length(Arguments) == Arity of
+                  true ->
+                      true;
+                  false ->
+                      Acc1
+              end;
+         (_Node, Acc1, #{}) ->
+              Acc1
+      end, false, Form, #{simplify_return => true, traverse => pre}).
+
+new_function_name(FName, Arity, Functions) ->
+    new_function_name(FName, Arity, Functions, 1).
+
+new_function_name(FName, Arity, Functions, Counter) ->
+    FName1 = list_to_atom(atom_to_list(FName) ++ "_" ++ integer_to_list(Counter)),
+    case ordsets:is_element({FName1, Arity}, Functions) of
+        true ->
+            new_function_name(FName, Arity, Functions, Counter + 1);
+        false ->
+            FName1
+    end.
+
+update_function_name(Name, Arity, NewName, Forms) ->
+    lists:map(
+      fun({function, Line, FName, FArity, Clauses})
+            when (FName == Name) andalso (FArity == Arity) ->
+              Clauses1 =
+                  lists:map(
+                    fun(Clause) ->
+                            update_call_name(Name, NewName, Arity, Clause)
+                    end, Clauses),
+              {function, Line, NewName, Arity, Clauses1};
+         (Form) ->
+              Form
+      end, Forms).
+
+update_call_name(OrignalName, NewName, Arity, Function) ->
+    erl_abs:map(
+      fun({call, Line, {atom, Line2, Name}, Arguments}, #{})
+            when (Name == OrignalName) andalso (length(Arguments) == Arity) ->
+              {call, Line, {atom, Line2, NewName}, Arguments};
+         (Node, #{}) ->
+              Node
+      end, Function, #{traverse => pre, simplify_return => true}).
+
+%% =====================================================================
+%% form_insert_heads
+%% =====================================================================
+form_insert_heads({attribute, _Line, file, _FileValue} = File, HeadsR) ->
+    append_to_headsr(File, HeadsR);
+form_insert_heads({attribute, Line, export, Exports}, {FHeadsR, AHeadsR}) ->
+    Exports1 = remove_duplicated_exports(Exports, FHeadsR),
+    Exports2 = remove_duplicated_exports(Exports1, AHeadsR),
+    case Exports2 of
+        [] ->
+            {FHeadsR, AHeadsR};
+        _ ->
+            Export = {attribute, Line, export, Exports2},
+            {FHeadsR, [Export|AHeadsR]}
+    end;
+form_insert_heads({function, _Line1, Name, Arity, _Clauses} = Function, {FHeadsR, AHeadsR}) ->
+    FHeadsR1 = insert_function_or_spec(function, Name, Arity, Function, FHeadsR),
+    {FHeadsR1, AHeadsR};
+form_insert_heads({attribute, _Line1, spec, {{Name, Arity}, _SpecType}} = Spec, {FHeadsR, AHeadsR}) ->
+    FHeadsR1 = insert_function_or_spec(spec, Name, Arity, Spec, FHeadsR),
+    {FHeadsR1, AHeadsR};
+form_insert_heads({eof, _Line1}, {[{eof, _Line2} = Eof|FHeadsR], AHeadsR}) ->
+    {[Eof|FHeadsR], AHeadsR};
+form_insert_heads({eof, _Line} = Eof, {FHeadsR, AHeadsR}) ->
+    {[Eof|FHeadsR], AHeadsR};
+form_insert_heads(Attribute, {FHeadsR, AHeadsR}) ->
+    {FHeadsR, [Attribute|AHeadsR]}.
+
+remove_duplicated_exports(Exports1, [{attribute, _Line, export, Exports}|T]) ->
+    Exports2 = Exports1 -- Exports,
+    remove_duplicated_exports(Exports2, T);
+remove_duplicated_exports(Exports, [_Form|T]) ->
+    remove_duplicated_exports(Exports, T);
+remove_duplicated_exports([], _Forms) ->
+    [];
+remove_duplicated_exports(Exports, []) ->
+    Exports.
+
+insert_function_or_spec(Type, Name, Arity, Form, HeadsR) ->
+    insert_function_or_spec(Type, Name, Arity, Form, HeadsR, [], HeadsR).
+
+insert_function_or_spec(function, Name, Arity, Function,
+                        [{attribute, _Line, {{Name, Arity}, _SpecType}} = Spec|HeadsR], Tails, _InitHeadsR) ->
+    lists:reverse(Tails) ++ [Function,Spec|HeadsR];
+insert_function_or_spec(spec, Name, Arity, Spec,
+                        [{function, _Line, Name, Arity, _Clauses} = Function|HeadsR], Tails, _InitHeadsR) ->
+    lists:reverse(Tails) ++ [Function,Spec|HeadsR];
+insert_function_or_spec(Type, Name, Arity, Form1, [Form|HeadsR], Tails, InitHeadsR) ->
+    insert_function_or_spec(Type, Name, Arity, Form1, HeadsR, [Form|Tails], InitHeadsR);
+insert_function_or_spec(_Type, _Name, _Arity, Form, [], _Tails, [{eof, _Line} = Eof|InitHeadsR]) ->
+    [Eof,Form|InitHeadsR];
+insert_function_or_spec(_Type, _Name, _Arity, Form, [], _Tails, InitHeadsR) ->
+    [Form|InitHeadsR].
+
+map_m_2(F, Nodes, Opts) ->
+    erl_abs_traverse_m:bind(
+      erl_abs_traverse_m:listen_nodes(map_m_1(F, Nodes, Opts)),
       fun({_, Nodes1}) when is_list(Nodes) ->
               erl_abs_traverse_m:return(Nodes1);
          ({_, [Node|_T]}) ->
@@ -218,6 +501,29 @@ map_m(F, Nodes, Opts) ->
          ({_, []}) ->
               erlang:error({no_nodes_return, Nodes})
       end).
+
+is_forms([Form|_T]) ->
+    is_form(Form);
+is_forms([]) ->
+    false.
+
+is_form(Nodes) when is_list(Nodes) ->
+    false;
+is_form(Form) ->
+    case erl_syntax:type(Form) of
+        attribute ->
+            true;
+        function ->
+            true;
+        error_marker ->
+            true;
+        warning_marker ->
+            true;
+        eof_marker ->
+            true;
+        _ ->
+            false
+    end.
 
 up_f_by_traverse(F, #{traverse := pre}) ->
     fun(Node, #{step := pre  } = Attr) -> F(Node, Attr);
@@ -237,12 +543,6 @@ up_f_by_traverse(F, #{traverse := leaf}) ->
 up_f_by_traverse(F, _) ->
     F.
 
-map_m_1(F, Nodes, #{traverse := list} = Opts) when is_list(Nodes) ->
-    erl_abs_traverse_m:sequence_all(
-      lists:map(
-        fun(Node) ->
-                map_m_list_node(F, Node, Opts)
-        end, Nodes));
 map_m_1(F, Nodes, Opts) when is_list(Nodes) ->
     erl_abs_traverse_m:sequence_either(
       lists:map(
@@ -257,18 +557,6 @@ map_m_1(F, NodeA, #{children := true} = Opts) ->
 map_m_1(F, NodeA, #{} = Opts) ->
     SyntaxLib = syntax_lib(Opts),
     map_m_tree_node(F, NodeA, Opts, SyntaxLib).
-
-map_m_list_node(_F, {error, Reason}, #{}) ->
-    erl_abs_traverse_m:nodes([{error, Reason}]);
-map_m_list_node(F, NodeA, Opts) ->
-    SyntaxLib = syntax_lib(Opts),
-    MA = case SyntaxLib:is_file(NodeA) of
-             false ->
-                 erl_abs_traverse_m:return(ok);
-             {file, File} ->
-                 erl_abs_traverse_m:update_file(File)
-         end,
-    erl_abs_traverse_m:then(MA, apply_f(F, NodeA, #{}, SyntaxLib)).
 
 map_m_tree_node(_F, {error, Reason}, _Opts, _SyntaxLib) ->
     erl_abs_traverse_m:nodes([{error, Reason}]);
@@ -290,7 +578,7 @@ map_m_tree_node(F, NodeA, Opts, SyntaxLib) ->
               fun(NodeB) ->
                       case SyntaxLib:tps(NodeB, Opts) of
                           {_Type, _Pos, []} ->
-                              erl_abs_traverse_m:nodes([NodeB]);
+                              erl_abs_traverse_m:insert_nodes([NodeB]);
                           {Parent, _Pos, Subtrees} ->
                               erl_abs_traverse_m:bind(
                                 map_m_children(F, NodeB, Subtrees, Opts#{parent => Parent}, SyntaxLib),
@@ -339,16 +627,16 @@ syntax_lib(#{}) ->
 m_subtrees(_F, {skip, Subtrees}, _Opts) when is_list(Subtrees) ->
     lists:map(
       fun(Subtree) ->
-              erl_abs_traverse_m:node(Subtree)
+              erl_abs_traverse_m:insert_node(Subtree)
       end, Subtrees);
 m_subtrees(_F, {skip, Subtree}, _Opts) ->
-    erl_abs_traverse_m:node(Subtree);
+    erl_abs_traverse_m:insert_node(Subtree);
 m_subtrees(F, {transformer, Subtree, Transformer}, Opts) ->
     erl_abs_traverse_m:bind(
       erl_abs_traverse_m:deep_sequence_m_1(m_subtrees(F, Subtree, Opts)),
       fun(Subtree1) ->
               Transformed = Transformer(Subtree1),
-              erl_abs_traverse_m:nodes(Transformed)
+              erl_abs_traverse_m:insert_nodes(Transformed)
       end);
 m_subtrees(F, {up_attr, Attr, Subtree}, Opts) when is_map(Attr) ->
     Opts1 = maps:merge(Opts, Attr),

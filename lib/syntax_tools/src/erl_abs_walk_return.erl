@@ -54,6 +54,8 @@ new(Return) ->
 %% if return type is not recognized, use DefaultConcereter to generate a map which could converted to erl_abs_walk_return:struct(S, A).
 %% @end
 -spec new(concereter(S, A), convertable(S, A) | term()) -> struct(S, A).
+new(_Concereter, #{?STRUCT_KEY := ?WALK_RETURN} = Return) ->
+    Return;
 new(_Concereter, #{} = Map) ->
     Map1 = up_map(Map),
     default(Map1);

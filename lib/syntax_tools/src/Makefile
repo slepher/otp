@@ -29,10 +29,15 @@ ERL_COMPILE_FLAGS += -pa $(EBIN) -pa ./ -I$(INCLUDE)
 ERL_COMPILE_FLAGS += +nowarn_shadow_vars +warn_unused_import #-Werror # +warn_missing_spec +warn_untyped_record
 
 SOURCES=erl_syntax.erl erl_prettypr.erl erl_syntax_lib.erl	\
-	erl_comment_scan.erl erl_recomment.erl epp_dodger.erl	\
-	prettypr.erl merl.erl merl_transform.erl
+        erl_comment_scan.erl erl_recomment.erl epp_dodger.erl	\
+        prettypr.erl merl.erl merl_transform.erl                \
+        erl_af_monad.erl erl_af_lib.erl \
+        erl_af_endo.erl erl_af_error.erl \
+	erl_af_return.erl erl_af_traverse_m.erl erl_af_walk_return.erl \
+	erl_af.erl erl_af_syntax.erl erl_af_compile_opts_transform.erl \
+	erl_af_quote.erl erl_af_do_transform.erl erl_af_macro.erl
 
-INCLUDE_FILES = merl.hrl
+INCLUDE_FILES = merl.hrl af_struct_name.hrl compile_opts.hrl quote.hrl do.hrl macro.hrl
 
 OBJECTS=$(SOURCES:%.erl=$(EBIN)/%.$(EMULATOR)) $(APP_TARGET) $(APPUP_TARGET)
 
@@ -68,6 +73,9 @@ realclean: clean
 
 $(EBIN)/%.$(EMULATOR):%.erl
 	$(erlc_verbose)erlc -W $(ERL_COMPILE_FLAGS) -o$(EBIN) $<
+
+$(EBIN)/erl_af_do_transform.beam: $(EBIN)/erl_af_quote.beam
+$(EBIN)/erl_af_macro.beam: $(EBIN)/erl_af_do_transform.beam
 
 # special rules and dependencies to apply the transform to itself
 $(EBIN)/merl_transform.beam: $(EBIN)/merl.beam ./merl_transform.beam \

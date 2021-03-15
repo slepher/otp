@@ -1,0 +1,4 @@
+-ifndef(ERL_AF_QUOTE).
+-define(ERL_AF_QUOTE, true).
+-compile({parse_transform, erl_af_quote}).
+-endif.

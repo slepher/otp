@@ -1,0 +1,4 @@
+-ifndef(ERL_AF_MACRO).
+-define(ERL_AF_MACRO, true).
+-compile({parse_transform, erl_af_macro}).
+-endif.

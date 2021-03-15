@@ -32,8 +32,8 @@ suite() ->
 %% @end
 %%--------------------------------------------------------------------
 init_per_suite(Config) ->
-    erlang:system_flag(backtrace_depth, 100),
-    Forms = erl_af_test_lib:test_module_forms(erl_af_sample_1, Config),
+    Config1 = erl_af_test_lib:load_data_modules(Config, [sample_transformer_1]),
+    Forms = erl_af_test_lib:test_module_forms(sample_1, Config1),
     [{forms, Forms}|Config].
 
 %%--------------------------------------------------------------------
@@ -324,7 +324,7 @@ test_traverse_m_updated(Config) ->
     erl_af_traverse_m:eval(TraverseM1, erl_af, #{}).
 
 test_map_forms(Config) ->
-    Forms = erl_af_test_lib:test_module_forms(erl_af_sample_2, Config),
+    Forms = erl_af_test_lib:test_module_forms(sample_2, Config),
     Forms1M = 
         erl_af:map_m(
           fun({attribute, _Line, mark, mark_01}) ->
@@ -345,10 +345,10 @@ test_map_forms(Config) ->
       fun(ErrorState) ->
               ?assertEqual(#{}, erl_af_error:printable(ErrorState))
       end, Result),
-    Value1 = erl_af_sample_2:test(ok_1),
-    Value2 = erl_af_sample_2:test(ok_2),
-    Value3 = erl_af_sample_2:test(ok_3),
-    Value4 = erl_af_sample_2:test(ok_4),
+    Value1 = sample_2:test(ok_1),
+    Value2 = sample_2:test(ok_2),
+    Value3 = sample_2:test(ok_3),
+    Value4 = sample_2:test(ok_4),
     ?assertEqual({ok_1, ok_2, ok_3, ok_4}, {Value1, Value2, Value3, Value4}),
     ok.
 

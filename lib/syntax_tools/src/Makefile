@@ -35,7 +35,8 @@ SOURCES=erl_syntax.erl erl_prettypr.erl erl_syntax_lib.erl	\
         erl_af_endo.erl erl_af_error.erl \
 	erl_af_return.erl erl_af_traverse_m.erl erl_af_walk_return.erl \
 	erl_af.erl erl_af_syntax.erl erl_af_compile_opts_transform.erl \
-	erl_af_quote.erl erl_af_do_transform.erl erl_af_macro.erl
+	erl_af_quote.erl erl_af_do_transform.erl erl_af_macro.erl \
+	erl_af_rebinding.erl
 
 INCLUDE_FILES = merl.hrl af_struct_name.hrl compile_opts.hrl quote.hrl do.hrl macro.hrl
 
@@ -76,6 +77,7 @@ $(EBIN)/%.$(EMULATOR):%.erl
 
 $(EBIN)/erl_af_do_transform.beam: $(EBIN)/erl_af_quote.beam
 $(EBIN)/erl_af_macro.beam: $(EBIN)/erl_af_do_transform.beam
+$(EBIN)/erl_af_rebinding.beam: $(EBIN)/erl_af_do_transform.beam
 
 # special rules and dependencies to apply the transform to itself
 $(EBIN)/merl_transform.beam: $(EBIN)/merl.beam ./merl_transform.beam \

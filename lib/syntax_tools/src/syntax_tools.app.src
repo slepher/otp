@@ -24,7 +24,8 @@
              erl_af_compile_opts_transform,
              erl_af_quote,
              erl_af_do_transform,
-             erl_af_macro
+             erl_af_macro,
+             erl_af_rebinding
             ]},
   {registered,[]},
   {applications, [stdlib]},

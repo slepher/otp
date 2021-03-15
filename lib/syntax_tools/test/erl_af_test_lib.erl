@@ -9,8 +9,9 @@
 -module(erl_af_test_lib).
 
 -include("compile_opts.hrl").
+-include_lib("eunit/include/eunit.hrl").
 %% API
--export([get_baseline/2, realize_with_baseline/2, test_module_forms/2, compile_test_module/2, compile_test_forms/1]).
+-export([get_baseline/2, realize_with_baseline/2, test_module_forms/2, compile_test_module/2, compile_test_forms/1, load_data_modules/2]).
 
 %%%===================================================================
 %%% API
@@ -60,6 +61,18 @@ test_module_forms(Module, Config) ->
         Forms ->
             Forms
     end.
+
+load_data_modules(Config, TestModules) ->
+    lists:foreach(
+      fun(TestModule) ->
+              Return = erl_af_test_lib:compile_test_module(TestModule, Config),
+              erl_af_return:with_error(
+                fun(Error) ->
+                        ?assertEqual(#{}, erl_af_error:printable(Error)),
+                        Error
+                end, Return)
+      end, TestModules),
+    Config.
 %%--------------------------------------------------------------------
 %% @doc
 %% @spec

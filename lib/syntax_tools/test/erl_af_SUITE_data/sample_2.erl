@@ -6,26 +6,30 @@
 %%% @end
 %%% Created :  9 Jul 2020 by Chen Slepher <slepheric@gmail.com>
 %%%-------------------------------------------------------------------
--module(erl_af_sample_1).
-
--compile({parse_transform, erl_af_sample_transformer_1}).
+-module(sample_2).
 
 %% API
--export([warning_0/0, error_0/0]).
+-export([test/1]).
 
--baseline(mark_base).
--mark(mark_error_0).
--mark(mark_0).
+-mark(mark_01).
 %%%===================================================================
 %%% API
 %%%===================================================================
--baseline(function_base).
-error_0() ->
-    mark_error_1.
 
-warning_0() ->
-    mark_1.
+test(ok_2)->
+    test(ok_1);
+test(ok_3)->
+    test_1(ok_3);
+test(ok_4)->
+    test(ok_4, ok_4);
+test(_A) ->
+    ok_2.
 
+test_1(ok_3) ->
+    ok_3.
+
+test(A, _B) ->
+    A.
 %%--------------------------------------------------------------------
 %% @doc
 %% @spec

@@ -53,7 +53,7 @@
 -export([fail_on_error/1]).
 -export([with_error/2, catch_fail/2, set_fail/1, catched_nodes/1]).
 -export([state/1, get/0, put/1, modify/1]).
--export([clear_continue/1, set_continue/2, listen_continue/1, listen_updated/1]).
+-export([clear_continue/1, set_continue/2, listen_continue/1, listen_updated/1, continue/0, continue/1]).
 -export([set_updated/1, nodes/1]).
 -export([with_formatter/2]).
 -export([warning/1, warnings/1, formatted_warnings/1, error/1, errors/1, formatted_errors/1]).
@@ -262,6 +262,12 @@ set_continue(MA, Continue) ->
       fun(#{} = StateM) ->
               update_m_state(StateM, #{continue => Continue})
       end, MA).
+
+continue() ->
+    set_continue(return(ok), true).
+
+continue(Continue) ->
+    set_continue(return(ok), Continue).
 
 set_updated(MA) ->
     map_m_state_ok(

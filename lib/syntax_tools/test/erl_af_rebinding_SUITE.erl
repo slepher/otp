@@ -1,16 +1,16 @@
 %%%-------------------------------------------------------------------
 %%% @author Chen Slepher <slepheric@gmail.com>
-%%% @copyright (C) 2018, Chen Slepher
+%%% @copyright (C) 2019, Chen Slepher
 %%% @doc
 %%%
 %%% @end
-%%% Created :  8 Dec 2018 by Chen Slepher <slepheric@gmail.com>
+%%% Created : 23 Sep 2019 by Chen Slepher <slepheric@gmail.com>
 %%%-------------------------------------------------------------------
--module(erl_af_macro_SUITE).
+-module(erl_af_rebinding_SUITE).
 
 -compile(export_all).
+-compile(nowarn_export_all).
 
--include("af_struct_name.hrl").
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("common_test/include/ct.hrl").
 
@@ -20,7 +20,7 @@
 %% @end
 %%--------------------------------------------------------------------
 suite() ->
-    [{timetrap,{seconds,60}}].
+    [{timetrap,{seconds,30}}].
 
 %%--------------------------------------------------------------------
 %% @spec init_per_suite(Config0) ->
@@ -30,8 +30,10 @@ suite() ->
 %% @end
 %%--------------------------------------------------------------------
 init_per_suite(Config) ->
-    TestModules = [macro_exports, macro_example, macro_test],
+    erlang:system_flag(backtrace_depth, 20),    
+    TestModules = [rebinding_example, rebinding_test],
     erl_af_test_lib:load_data_modules(Config, TestModules).
+
 %%--------------------------------------------------------------------
 %% @spec end_per_suite(Config0) -> term() | {save_config,Config1}
 %% Config0 = Config1 = [tuple()]
@@ -108,15 +110,20 @@ groups() ->
 %% @end
 %%--------------------------------------------------------------------
 all() -> 
-    [test_ok_case, test_function_case, test_quote_case,
-     test_unquote_splicing_case, test_pattern_case, test_other_case,
-     test_macro_with_warnings, test_macro_with_vars, test_macro_order, test_merge_rename_function].
+    [test_lc, test_function, test_case, test_if,
+     test_map, test_map_update,
+     test_rec, test_rec_update,
+     test_operator, test_list, test_tuple,
+     test_pattern_save_var, test_pattern_save_var_in_fun, test_pattern_save_var_in_case
+    ].
 
 %%--------------------------------------------------------------------
 %% @spec TestCase() -> Info
 %% Info = [tuple()]
 %% @end
 %%--------------------------------------------------------------------
+test_rebinding_lc() -> 
+    [].
 
 %%--------------------------------------------------------------------
 %% @spec TestCase(Config0) ->
@@ -127,85 +134,91 @@ all() ->
 %% Comment = term()
 %% @end
 %%--------------------------------------------------------------------
-test_ok_case(_Config) ->
-    ?assertEqual(ok, macro_test:test_ok()).
-
-test_function_case(_Config) ->
-    ?assertEqual(ok, macro_test:test_function(world)),
-    ?assertEqual({error, foo}, macro_test:test_function(foo)),
+test_lc(_Config) -> 
+    A = rebinding_test:test_lc(10),
+    B = rebinding_test:test_lc_origin(10),
+    ?assertEqual(A, B),
     ok.
 
-test_quote_case(_Config) ->
-    ?assertEqual({ok, ok}, macro_test:test_unquote()),
-    ?assertEqual({ok, ok}, macro_test:test_binding()),
+test_function(_Config) ->
+    A = rebinding_test:test_function(10),
+    B = rebinding_test:test_function_origin(10),
+    ?assertEqual(A, B),
     ok.
 
-test_unquote_splicing_case(_Config) ->
-    ?assertEqual({ok, {hello, foo, bar, world}}, macro_test:test_unquote_splicing()),
-    {Value1, Value2} = macro_test:test_unquote_splicing_mix(),
-    ?assertEqual({ok, [hello, foo, bar, world], {hello, foo, bar, world}}, Value1),
-    ?assertEqual({error, foo, zaa}, Value2),
+test_case(_Config) ->
+    A = rebinding_test:test_case(10),
+    B = rebinding_test:test_case_origin(10),
+    C = rebinding_test:test_case_pinned(10),
+    ?assertEqual(A, B),
+    ?assertEqual(A, C),
     ok.
 
-test_pattern_case(_Config) ->
-    ?assertEqual({hello, world, foo, bar}, macro_test:test_match_pattern()),
-    ?assertEqual({ok, {hello2, world, world, {hello, world}}}, macro_test:test_function_pattern_1()),
-    ?assertEqual({error, {foo, bar}}, macro_test:test_function_pattern_2()),
-    ?assertEqual({ok, 11}, macro_test:test_case_pattern_1()),
-    ?assertEqual({ok, {hello, world, foo, bar}}, macro_test:test_case_pattern_2()),
-    ?assertEqual({error, task}, macro_test:test_case_pattern_3()),
+test_if(_Config) ->
+    A = rebinding_test:test_if(10),
+    B = rebinding_test:test_if_origin(10),
+    ?assertEqual(A, B),
     ok.
 
-test_quote_code_case(_Config) ->
-    ?assertEqual(ok, macro_test:test_quote_code()),
-    ?assertEqual({hello, ok}, macro_test:test_quote_line_1()),
-    Ast = {tuple, 20, [{atom, 20, a}, {atom, 20, b}]},
-    NewAst = {tuple, 22, [{atom, 22, ok}, {tuple, 23, [{atom, 23, hello}, Ast]}]},
-    ?assertEqual(NewAst,macro_example:quote_line_2(Ast)),
+test_rec(_Config) ->
+    A = rebinding_test:test_rec(10),
+    B = rebinding_test:test_rec_origin(10),
+    ?assertEqual(A, B),
     ok.
 
-test_other_case(_Config) ->
-    ?assertEqual(true, macro_test:test_case()),
-    ?assertException(exit, throw, macro_test:test_try_catch()),
-    ?assertEqual({hello, ok, world}, macro_test:test_function()),
-    ?assertMatch({ok, {_, _, macro_test}}, macro_test:test_attributes()),
-    ?assertEqual({ok, {hello, world}}, macro_test:test_group_args()),
+test_rec_update(_Config) ->
+    A = rebinding_test:test_rec_update(10),
+    B = rebinding_test:test_rec_update_origin(10),
+    ?assertEqual(A, B),
     ok.
 
-test_macro_order(_Config) ->
-    ?assertEqual({fail, ok}, macro_test:test_macro_order()),
+test_map(_Config) ->
+    A = rebinding_test:test_map(10),
+    B = rebinding_test:test_map_origin(10),
+    ?assertEqual(A, B),
     ok.
 
-test_macro_with_warnings(Config) ->
-    Forms = erl_af_test_lib:test_module_forms(macro_with_warnings, Config),
-    Baseline = erl_af_test_lib:get_baseline(yep, Forms),
-    ErrorStruct = erl_af_return:run_error(erl_af_test_lib:compile_test_forms(Forms)),
-    io:format("error is ~p~n", [erl_af_error:printable(ErrorStruct)]),
-    ?assertEqual(ok, macro_with_warnings:test_attributes()),
-    {FileWithErrors, [{File, Warnings}]} = erl_af_test_lib:realize_with_baseline(Baseline, ErrorStruct),
-    Local = macro_with_warnings__local_macro,
-    ?assertEqual("macro_with_warnings.erl", filename:basename(File)),
-    ?assertEqual(
-       [{3,  Local, noop_function},
-        {4,  erl_af_macro, invalid_macro_attribute},
-        {5,  erl_af_macro, invalid_macro_attribute},
-        {12, Local, noop},
-        {18, Local, noop},
-        {20, Local, noop},
-        {25, erl_af_quote,{non_empty_tail,[{atom,Baseline + 25,tail}]}}
-       ],
-       Warnings),
-    ?assertEqual([], FileWithErrors),
+test_map_update(_Config) ->
+    A = rebinding_test:test_map_update(10),
+    B = rebinding_test:test_map_update_origin(10),
+    ?assertEqual(A, B),
     ok.
 
-test_macro_with_vars(_Config) ->
-    Value = macro_test:test_macro_with_vars(13),
-    ?assertEqual(112, Value).
+test_operator(_Config) ->
+    A = rebinding_test:test_operator(10),
+    B = rebinding_test:test_operator_origin(10),
+    ?assertEqual(A, B),
+    ok.
 
-test_merge_rename_function(_Config) ->
-    Value1 = macro_test:test_merged_function(ok_1),
-    Value2 = macro_test:test_merged_function(ok_2),
-    Value3 = macro_test:test_merged_function(ok_3),
-    Value4 = macro_test:test_merged_function(ok_4),
-    ?assertEqual({ok_1, ok_2, ok_3, ok_4}, {Value1, Value2, Value3, Value4}),
+test_tuple(_Config) ->
+    A = rebinding_test:test_tuple(10),
+    B = rebinding_test:test_tuple_origin(10),
+    ?assertEqual(A, B),
+    ok.
+
+test_list(_Config) ->
+    A = rebinding_test:test_list(10),
+    B = rebinding_test:test_list_origin(10),
+    ?assertEqual(A, B),
+    ok.
+
+test_pattern_save_var(_Config) ->
+    A = rebinding_test:test_pattern_same_var(1, 2),
+    B = rebinding_test:test_pattern_same_var(3, 3),
+    ?assertEqual(3, A),
+    ?assertEqual(7, B),
+    ok.
+
+test_pattern_save_var_in_fun(_Config) ->
+    A = rebinding_test:test_pattern_same_var_in_fun(1, 2),
+    B = rebinding_test:test_pattern_same_var_in_fun(3, 3),
+    ?assertEqual(3, A),
+    ?assertEqual(7, B),
+    ok.
+
+test_pattern_save_var_in_case(_Config) ->
+    A = rebinding_test:test_pattern_same_var_in_case(1, 2),
+    B = rebinding_test:test_pattern_same_var_in_case(3, 3),
+    ?assertEqual(3, A),
+    ?assertEqual(7, B),
     ok.

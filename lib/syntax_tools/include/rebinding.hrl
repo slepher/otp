@@ -1,0 +1,4 @@
+-ifndef(ERL_AF_REBINDING).
+-define(ERL_AF_REBINDING, true).
+-compile({parse_transform, erl_af_rebinding}).
+-endif.

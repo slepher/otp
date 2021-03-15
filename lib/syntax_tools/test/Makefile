@@ -9,9 +9,9 @@ MODULES= \
 	syntax_tools_SUITE \
 	merl_SUITE \
 	erl_af_test_lib \
-	erl_af_sample_transformer_1 \
 	erl_af_SUITE \
-	erl_af_macro_SUITE
+	erl_af_macro_SUITE \
+	erl_af_rebinding_SUITE
 
 ERL_FILES= $(MODULES:%=%.erl)
 

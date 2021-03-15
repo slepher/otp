@@ -6,7 +6,7 @@
 %%% @end
 %%% Created : 19 Feb 2021 by Chen Slepher <slepheric@gmail.com>
 %%%-------------------------------------------------------------------
--module(erl_af_sample_transformer_1).
+-module(sample_transformer_1).
 
 %% API
 -export([parse_transform/2, format_error/1]).

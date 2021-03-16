@@ -143,193 +143,125 @@ find_rebinding_options(Name, Arity, #rebinding_options{fun_options = FunOptions,
     end.
 
 walk_function_clause(Clause, RebindingOptions) ->
-    Opts = #{traverse => pre, simplify_return => false, attr => #{node => form, parent => fun_expr}},
-    Context0 = new_context(),
-    erl_af_traverse_m:set_updated(
-    erl_af_traverse_m:erl_af_traverse_m(
-        erl_af:map_with_state(
-          fun(Node, Acc, Attr) ->
-                  Attr1 = maps:merge(Attr, maps:with(rebinding_keys(), RebindingOptions)),
-                  NodeType = erl_syntax:type(Node),
-                  walk_node(NodeType, Node, Acc, Attr1)
-          end, Context0, Clause, Opts))).
+    Opts = #{traverse => pre, attr => #{node => form, parent => fun_expr}},
+    do([ erl_af_traverse_m ||
+           erl_af_traverse_m:put(new_context()),
+           erl_af:map_m(
+             fun(Node, Attr) ->
+                     do([erl_af_traverse_m ||
+                            Context <- erl_af_traverse_m:get(),
+                            NodeType = erl_syntax:type(Node),
+                            Attr1 = maps:merge(Attr, maps:with(rebinding_keys(), RebindingOptions)),
+                            erl_af_traverse_m:erl_af_traverse_m(walk_node(NodeType, Node, Context, Attr1))
+                        ])
+             end, Clause, Opts)
+       ]).
 
-walk_node({op, _Line1, '+', {var, _Line3, _Varname} = Var},
-          #{pattern := PatternType} = Context, #{node := pattern, step := pre})
+walk_node(prefix_expr, {op, _Line1, '+', {var, _Line3, _Varname} = Var},
+          #{pattern := PatternType} = Context, #{node := pattern})
   when PatternType == match_left; PatternType == clause_match ->
     Var1 = rename_pinned_var(Var, Context),
-    erl_af_walk_return:new(#{node => Var1, state => Context, continue => true});
+    erl_af_walk_return:new(#{node => Var1, continue => true});
 
-walk_node({op, _Line, _Op, _Left, _Right}, #{},
-            #{step := pre, node := expression, strict := true}) ->
-    Sequence =
-        fun([LeftMs, OpM, RightMs]) ->
-                LeftMs1 = lists:map(fun with_funcall_argument/1, LeftMs),
-                RightMs1 = lists:map(fun with_funcall_argument/1, RightMs),
-                with_scope_group(erl_af_traverse_m:deep_sequence_nodes([LeftMs1, OpM, RightMs1]))
-        end,
-    erl_af_walk_return:new(#{continue => Sequence});
+walk_node(infix_expr, _Expr, #{}, #{node := expression, strict := true}) ->
+    walk_scope_group_expression();
 
 %% walk function call
-walk_node({call, _Line, _Function, _Args}, #{},
-            #{step := pre, node := expression, strict := true}) ->
-    Sequence =
-        fun([FunctionM, FunctionArgMs]) ->
-                FunctionArgMs1 = lists:map(fun with_funcall_argument/1, FunctionArgMs),
-                with_scope_group(erl_af_traverse_m:deep_sequence_nodes([FunctionM, FunctionArgMs1]))
-        end,
-    erl_af_walk_return:new(#{continue => Sequence});
+walk_node(application, _FunCall, #{}, #{node := expression, strict := true}) ->
+    walk_scope_group_expression();
 
-walk_node({tuple, _Line, _TupleElements}, #{} = Context,
-            #{step := pre, node := expression, strict := true}) ->
-    Sequence =
-        fun([TupleElementMs]) ->
-                TupleElementMs1 = lists:map(fun with_funcall_argument/1, TupleElementMs),
-                with_scope_group(erl_af_traverse_m:deep_sequence_nodes([TupleElementMs1]))
-        end,
-    erl_af_walk_return:new(#{continue => Sequence, state => Context});
+walk_node(tuple, _Tuple, #{}, #{node := expression, strict := true}) ->
+    walk_scope_group_expression();
 
-walk_node({cons, _Line, _Head, _Tail}, #{},
-            #{step := pre, node := expression, strict := true}) ->
-    Sequence =
-        fun([HeadMs]) ->
-                HeadMs1 = lists:map(fun with_funcall_argument/1, HeadMs),
-                with_scope_group(erl_af_traverse_m:deep_sequence_nodes([HeadMs1]));
-           ([HeadMs, TailMs]) ->
-                HeadMs1 = lists:map(fun with_funcall_argument/1, HeadMs),
-                TailMs1 = lists:map(fun with_funcall_argument/1, TailMs),
-                with_scope_group(erl_af_traverse_m:deep_sequence_nodes([HeadMs1, TailMs1]))
-        end,
-    erl_af_walk_return:new(#{continue => Sequence});
+walk_node(list, _List, #{}, #{node := expression, strict := true}) ->
+    walk_scope_group_expression();
 
-walk_node({map, _Line, _MapAssociations}, #{},
-            #{step := pre, node := expression, strict := true}) ->
-    Sequence =
-        fun([MapAssociationMs]) ->
-                MapAssociationMs1 = lists:map(fun with_funcall_argument/1, MapAssociationMs),
-                with_scope_group(erl_af_traverse_m:deep_sequence_nodes([MapAssociationMs1]))
-        end,
-    erl_af_walk_return:new(#{continue => Sequence});
+walk_node(map_expr, _Map, #{}, #{node := expression, strict := true}) ->
+    walk_scope_group_expression();
 
-walk_node({map, _Line, _Map, _MapAssociations}, #{},
-            #{step := pre, node := expression, strict := true}) ->
-    Sequence =
-        fun([MapMs, MapAssociationMs]) ->
-                MapMs1 = lists:map(fun with_funcall_argument/1, MapMs),
-                MapAssociationMs1 = lists:map(fun with_funcall_argument/1, MapAssociationMs),
-                with_scope_group(erl_af_traverse_m:deep_sequence_nodes([MapMs1, MapAssociationMs1]))
-        end,
-    erl_af_walk_return:new(#{continue => Sequence});
-
-walk_node({record, _Line, _Name, _RecFields}, #{} = Context,
-            #{step := pre, node := expression, strict := true}) ->
-    Sequence =
-        fun([NameMs, RecFieldMs]) ->
-                RecFieldMs1 = lists:map(fun with_funcall_argument/1, RecFieldMs),
-                with_scope_group(erl_af_traverse_m:deep_sequence_nodes([NameMs, RecFieldMs1]))
-        end,
-    erl_af_walk_return:new(#{continue => Sequence, state => Context});
-
-walk_node({record, _Line, _Rec, _Name, _RecFields}, #{} = Context,
-            #{step := pre, node := expression, strict := true}) ->
-    Sequence =
-        fun([RecMs, NameMs, RecFieldMs]) ->
-                RecMs1 = lists:map(fun with_funcall_argument/1, RecMs),
-                RecFieldMs1 = lists:map(fun with_funcall_argument/1, RecFieldMs),
-                with_scope_group(erl_af_traverse_m:deep_sequence_nodes([RecMs1, NameMs, RecFieldMs1]))
-        end,
-    erl_af_walk_return:new(#{continue => Sequence, state => Context});
+walk_node(record_expr, _Record, #{}, #{node := expression, strict := true}) ->
+    walk_scope_group_expression();
 
 %% walk comprehension
-walk_node({ComprehensionType, _Line, _Expression, _Qualifiers}, #{} = Context, #{step := pre})
-  when (ComprehensionType == lc) or (ComprehensionType == bc) ->
-    walk_comprehension(Context);
+walk_node(list_comp, _ListComp, #{}, #{}) ->
+    walk_comprehension();
+
+walk_node(binary_comp, _BinaryComp, #{}, #{}) ->
+    walk_comprehension();
 
 %% walk comprehension generate
-walk_node({GenerateType, _Line, _Pattern, _Expression}, #{} = Context, #{step := pre})
-    when (GenerateType == generate) or (GenerateType == b_generate) ->
-    walk_generate(Context);
+walk_node(generator, _ListGenerator, #{}, #{}) ->
+    walk_generate();
+
+walk_node(binary_generator, _BinaryGenerator, #{}, #{}) ->
+    walk_generate();
 
 %% walk match
-walk_node({match, _Line, _Patterns, _Expressions}, #{} = Context, #{step := pre, node := expression}) ->
-    walk_match(Context);
+walk_node(match_expr, _Match, #{}, #{node := expression}) ->
+    walk_match();
 
 %% walk function clause and other clauses
-walk_node({clause, _Line, _Patterns, _Match, _Body}, #{} = Context, #{step := pre} = Attr) ->
-    walk_clause(Context, Attr);
+walk_node(clause, _Clause, #{}, #{} = Attr) ->
+    walk_clause(Attr);
 
 %% walk named fun
-walk_node({named_fun, _Line, _Name, _Clauses},  #{} = Context, #{step := pre}) ->
-    walk_named_fun(Context);
+walk_node(named_fun_expr, _NamedFun, #{}, #{}) ->
+    walk_named_fun();
 
-%% do nothing to _
-walk_node({var, _Line, '_'}, #{} = Context, #{}) ->
-    erl_af_walk_return:new(#{state => Context});
+walk_node(case_expr, _Case, #{}, #{}) ->
+    walk_clause_parent_expression();
+
+walk_node(if_expr, _If, #{}, #{}) ->
+    walk_clause_parent_expression();
+
+walk_node(receive_expr, _Receive, #{}, #{}) ->
+    walk_clause_parent_expression();
+
+walk_node(try_expr, _Try, #{}, #{}) ->
+    walk_clause_parent_expression();
+
+walk_node(catch_expr, _Catch, #{}, #{}) ->
+    walk_clause_parent_expression();
 
 %% rename var if current node is expression.
-walk_node({var, _Line, _Varname} = Var, #{} = Context, #{node := expression}) ->
-    Var1 = rename_normal_var(Var, Context),
-    {Var1, Context};
+walk_node(variable, Var, #{} = Context, #{node := expression}) ->
+    to_walk_return(Var, rename_expression_var(Var, Context));
 
 %% rename var if current node is guard.
-walk_node({var, _Line, _Varname} = Var, #{} = Context, #{node := guard}) ->
-    Var1 = rename_normal_var(Var, Context),
-    {Var1, Context};
+walk_node(variable, Var, #{} = Context, #{node := guard}) ->
+    to_walk_return(Var, rename_guard_var(Var, Context));
 
 %% rename var if current node is clause match pattern.
-walk_node({var, _Line, _Varname} = Var, #{pattern := clause_match} = Context, #{clause_pinned := true}) ->
-    Var1 = rename_clause_match_var(Var, Context),
-    {Var1, Context};
+walk_node(variable, Var, #{pattern := clause_match} = Context, #{clause_pinned := true}) ->
+    to_walk_return(Var, rename_clause_match_var(Var, Context));
 
 %% rename var if current node is clause match pattern.
-walk_node({var, _Line, _Varname} = Var, #{pattern := clause_match} = Context, #{}) ->
-    rebind_clause_match_var(Var, Context);
+walk_node(variable, Var, #{pattern := clause_match} = Context, #{}) ->
+    to_walk_return(Var, rebind_clause_match_var(Var, Context));
 
 %% rebind var if current node is function pattern.
-walk_node({var, _Line, _Varname} = Var, #{pattern := function_clause} = Context, #{node := pattern}) ->
-    rebind_function_clause_var(Var, Context);
+walk_node(variable, Var, #{pattern := function_clause} = Context, #{node := pattern}) ->
+    to_walk_return(Var, rebind_function_clause_var(Var, Context));
 
 %% rebind var if current node is match pattern.
-walk_node({var, _Line, _Varname} = Var, #{pattern := match_left} = Context, #{node := pattern}) ->
-    rebind_match_left_var(Var, Context);
+walk_node(variable, Var, #{pattern := match_left} = Context, #{node := pattern}) ->
+    to_walk_return(Var, rebind_match_left_var(Var, Context));
 
 %% rebind var if current node is comprehension_generate pattern.
-walk_node({var, _Line, _Varname} = Var,
-          #{pattern := comprehension_generate} = Context, #{node := pattern}) ->
-    rebind_comprehension_generate_var(Var, Context);
+walk_node(variable, Var, #{pattern := comprehension_generate} = Context, #{node := pattern}) ->
+    to_walk_return(Var, rebind_comprehension_generate_var(Var, Context));
 
-walk_node( Node, #{} = Context, #{step := pre, node := expression} = Attr) ->
-    NodeType = erl_syntax:type(Node),
-    case is_scope_group(NodeType, Attr) of
-        true ->
-            Sequence = 
-                fun(SubtreeMs) ->
-                        with_scope_group(erl_af_traverse_m:deep_sequence_nodes(SubtreeMs))
-                end,
-            erl_af_walk_return:new(#{continue => Sequence});
-        false ->
-            erl_af_walk_return:new(#{state => Context})
-    end;
-walk_node(_Node, Context, #{}) ->
+walk_node(_NodeType, _Node, Context, #{}) ->
     erl_af_walk_return:new(#{state => Context}).
 
-%% case expression
-is_scope_group(case_expr, #{}) ->
-    true;
-%% if expression
-is_scope_group(if_expr, #{}) ->
-    true;
-%% catch expression
-is_scope_group(catch_expr, #{}) ->
-    true;
-%% receive expression
-is_scope_group(receive_expr, #{}) ->
-    true;
-%% try expression
-is_scope_group(try_expr, #{}) ->
-    true;
-is_scope_group(_Type, #{}) ->
-    false.
+to_walk_return(Var, {Var, Context1}) ->
+    erl_af_walk_return:new(#{state => Context1});
+to_walk_return(_Var, {Var1, Context1}) ->
+    erl_af_walk_return:new(#{node => Var1, state => Context1});
+to_walk_return(Var, Var) ->
+    erl_af_walk_return:new(#{});
+to_walk_return(_Var, Var1) ->
+    erl_af_walk_return:new(#{node => Var1}).
 
 clause_scope_type(fun_expr) ->
     shadowed;
@@ -338,14 +270,14 @@ clause_scope_type(named_fun_expr) ->
 clause_scope_type(_Other) ->
     nonfun_clause.
 
-walk_comprehension(Context) ->
+walk_comprehension() ->
     Sequence =
         fun(SubtreeMs) ->
                 with_shadowed(erl_af_traverse_m:deep_r_sequence_nodes(SubtreeMs))
         end,
-    erl_af_walk_return:new(#{continue => Sequence, state => Context}).
+    erl_af_walk_return:new(#{continue => Sequence}).
 
-walk_generate(Context) ->
+walk_generate() ->
     Sequence =
         fun([PatternMs, ExpressionMs]) ->
                 PatternsM1 = with_comprehension_generate_pattern(PatternMs),
@@ -353,9 +285,9 @@ walk_generate(Context) ->
                 %% walk expression first
                 erl_af_traverse_m:deep_r_sequence_nodes([PatternsM1, ExpressionsM1])
         end,
-    erl_af_walk_return:new(#{continue => Sequence, state => Context}).
+    erl_af_walk_return:new(#{continue => Sequence}).
 
-walk_match(Context) ->
+walk_match() ->
     Sequence =
         fun([PatternMs, ExpressionM]) ->
                 PatternsM = erl_af_monad:sequence_m(PatternMs, erl_af_traverse_m),
@@ -363,31 +295,71 @@ walk_match(Context) ->
                 %% walk expression first
                 erl_af_traverse_m:deep_r_sequence_nodes([PatternsM1, ExpressionM])
         end,
-    erl_af_walk_return:new(#{continue => Sequence, state => Context}).
+    erl_af_walk_return:new(#{continue => Sequence}).
 
-walk_clause(Context, #{parent := Parent}) ->
+walk_clause(#{parent := Parent}) ->
     ScopeType = clause_scope_type(Parent),
     PatternType = scope_type_pattern(ScopeType),
     Sequence =
         fun([PatternMs|RestTreesM]) ->
                 PatternsM1 = with_pattern(PatternType, PatternMs),
-                with_scope_type(
-                  ScopeType, erl_af_traverse_m:deep_sequence_nodes([PatternsM1|RestTreesM]))
+                with_scope_type(ScopeType, erl_af_traverse_m:deep_sequence_nodes([PatternsM1|RestTreesM]))
         end,
-    erl_af_walk_return:new(#{continue => Sequence, state => Context}).
+    erl_af_walk_return:new(#{continue => Sequence}).
 
-walk_named_fun(Context) ->
+walk_named_fun() ->
     Sequence =
         fun([NameTreeMs|RestTreeMs]) ->
                 NameTreesM1 = with_function_clause_pattern(NameTreeMs),
                 with_shadowed(erl_af_traverse_m:deep_sequence_nodes([NameTreesM1|RestTreeMs]))
         end,
-    erl_af_walk_return:new(#{continue => Sequence, state => Context}).
+    erl_af_walk_return:new(#{continue => Sequence}).
+
+walk_clause_parent_expression() ->
+    Sequence = fun sequence_scope_group_subtrees/1,
+    erl_af_walk_return:new(#{continue => Sequence}).
+
+%% these expression has it's scope group
+%% for this scope, we name it argument scope
+%% every variable binded in scope could not used in neighbour scope, but avaliable outside scope group
+%% hello(A = 1, A1 = 2)
+%% [A = 1|[A1 = 2]]
+%% {A = 1, A1 = 2}
+%% #hello{world1 = (A = 1), world2 = (A1 = 2)}
+%% #{world1 => (A = 1), world2 => (A1 = 2)}
+%% (A = 1) + (A1 = 2)
+%% for example
+%% 1> (A = A1) + (A1 = 2).
+%% * 1: variable 'A1' is unbound
+%% 1> (A = 1) + (A1 = A).
+%% * 1: variable 'A' is unbound
+%% 3> ((A = 1) + (A1 = 2)), A1.
+%% 2
+%% usually use dont write code this style, so variable rebinding only works in strict mode.
+walk_scope_group_expression() ->
+    Sequence = fun sequence_scope_group_with_argument/1,
+    erl_af_walk_return:new(#{continue => Sequence}).
+
+sequence_scope_group_subtrees(SubtreeMss) ->
+    with_scope_group(erl_af_traverse_m:deep_sequence_nodes(SubtreeMss)).
+
+sequence_scope_group_with_argument(SubtreeMss) ->
+    SubtreeMss1 =
+        lists:map(
+          fun(SubtreeMs) when is_list(SubtreeMs) ->
+                  lists:map(fun with_argument/1, SubtreeMs);
+             (SubtreeM) ->
+                  SubtreeM
+          end, SubtreeMss),
+    sequence_scope_group_subtrees(SubtreeMss1).
 
 rename_pinned_var(Var, Context) ->
     rename_var(Var, Context).
 
-rename_normal_var(Var, Context) ->
+rename_expression_var(Var, Context) ->
+    rename_var(Var, Context).
+
+rename_guard_var(Var, Context) ->
     rename_var(Var, Context).
 
 rename_clause_match_var(Var, Context) ->
@@ -418,11 +390,8 @@ new_context() ->
 with_scope_group(NodeM) ->
     with_scope_type(scope_group, NodeM).
 
-%% with_nonfun_clause(NodeM) ->
-%%     with_scope_type(nonfun_clause, NodeM).
-
-with_funcall_argument(NodeM) ->
-    with_scope_type(funcall_argument, NodeM).
+with_argument(NodeM) ->
+    with_scope_type(argument, NodeM).
 
 with_shadowed(NodeM) ->
     with_scope_type(shadowed, NodeM).
@@ -435,9 +404,6 @@ with_function_clause_pattern(NodeM) ->
 
 with_comprehension_generate_pattern(NodeM) ->
     with_pattern(comprehension_generate, NodeM).
-
-%% with_clause_match_pattern(NodeM) ->
-%%     with_pattern(clause_match, NodeM).
 
 with_pattern(PatternType, NodeM) ->
     ScopeType = pattern_to_scope_type(PatternType),
@@ -507,8 +473,8 @@ entry_scope_type(scope_group, Context) ->
     entry_scope_group(Context);
 entry_scope_type(nonfun_clause, Context) ->
     entry_nonfun_clause(Context);
-entry_scope_type(funcall_argument, Context) ->
-    entry_funcall_argument(Context);
+entry_scope_type(argument, Context) ->
+    entry_argument(Context);
 entry_scope_type(shadowed, Context) ->
     entry_shadowed(Context);
 entry_scope_type(ScopeType, Context) ->
@@ -519,8 +485,8 @@ exit_scope_type(scope_group, Context) ->
     exit_scope_group(Context);
 exit_scope_type(nonfun_clause, Context) ->
     exit_nonfun_clause(Context);
-exit_scope_type(funcall_argument, Context) ->
-    exit_funcall_argument(Context);
+exit_scope_type(argument, Context) ->
+    exit_argument(Context);
 exit_scope_type(shadowed, Context) ->
     exit_shadowed(Context);
 exit_scope_type(ScopeType, Context) ->
@@ -558,12 +524,12 @@ exit_nonfun_clause(#{local_varnames    := LocalVarnames,
     ScopeGroupStack1 = [{ScopeVarnames1, ScopeRenames}|ScopeGroupStack],
     Context2#{scope_group_stack => ScopeGroupStack1}.
 
-entry_funcall_argument(Context) ->
+entry_argument(Context) ->
     push_rename_stack(Context).
 
-exit_funcall_argument(#{local_varnames    := LocalVarnames,
-                        local_renames     := LocalRenames,
-                        scope_group_stack := [{ScopeVarnames, ScopeRenames}|ScopeGroupStack]} = Context) ->
+exit_argument(#{local_varnames    := LocalVarnames,
+                local_renames     := LocalRenames,
+                scope_group_stack := [{ScopeVarnames, ScopeRenames}|ScopeGroupStack]} = Context) ->
     Context1 = pop_rename_stack(Context),
     ScopeVarnames1 = ordsets:union(ScopeVarnames, LocalVarnames),
     ScopeRenames1 = maps:merge(ScopeRenames, LocalRenames),

@@ -8,7 +8,9 @@
 %%%-------------------------------------------------------------------
 -module(erl_af_rebinding).
 
+-include("af_struct_name.hrl").
 -include("do.hrl").
+
 
 %% API
 -export([parse_transform/2, format_error/1]).
@@ -141,7 +143,7 @@ find_rebinding_options(Name, Arity, #rebinding_options{fun_options = FunOptions,
     end.
 
 walk_function_clause(Clause, RebindingOptions) ->
-    Opts = #{traverse => all, simplify_return => false, attr => #{node => form, parent => fun_expr}},
+    Opts = #{traverse => pre, simplify_return => false, attr => #{node => form, parent => fun_expr}},
     Context0 = new_context(),
     erl_af_traverse_m:set_updated(
     erl_af_traverse_m:erl_af_traverse_m(
@@ -157,48 +159,70 @@ walk_node({op, _Line1, '+', {var, _Line3, _Varname} = Var},
     Var1 = rename_pinned_var(Var, Context),
     erl_af_walk_return:new(#{node => Var1, state => Context, continue => true});
 
+%% walk function call
+walk_node({call, _Line, _Function, _Args}, #{},
+            #{step := pre, node := expression, strict := true}) ->
+    Sequence =
+        fun([FunctionM, FunctionArgMs]) ->
+                FunctionArgMs1 = lists:map(fun with_funcall_argument/1, FunctionArgMs),
+                with_scope_group(erl_af_traverse_m:deep_sequence_nodes([FunctionM, FunctionArgMs1]))
+        end,
+    erl_af_walk_return:new(#{continue => Sequence});
+
 walk_node( Node, #{} = Context, #{step := pre, node := expression} = Attr) ->
     NodeType = erl_syntax:type(Node),
     case is_scope_group(NodeType, Attr) of
         true ->
-            Context1 = entry_scope_group(Context),
-            walk_node_1(Node, Context1, Attr);
+            WalkReturn = walk_node_1(Node, Context, Attr),
+            update_sequence(WalkReturn);
         false ->
             walk_node_1(Node, Context, Attr)
     end;
-walk_node(Node, #{} = Context, #{step := post, node := expression} = Attr) ->
-    NodeType = erl_syntax:type(Node),
-    case is_scope_group(NodeType, Attr) of
-        true ->
-            Context1 = exit_scope_group(Context),
-            walk_node_1(Node, Context1, Attr);
-        false ->
-            walk_node_1(Node, Context, Attr)
-    end;
-
 walk_node(Node, Context, #{} = Attr) ->
     walk_node_1(Node, Context, Attr).
 
+update_sequence(#{?STRUCT_KEY := ?WALK_RETURN} = WalkReturn) ->
+    Sequence = maps:get(continue, WalkReturn, fun erl_af_traverse_m:deep_sequence_nodes/1),
+    Sequence1 =
+        fun(SubtreeMs) ->
+                with_scope_group(Sequence(SubtreeMs))
+        end,
+    WalkReturn#{continue => Sequence1};
+update_sequence({Node1, Context1}) ->
+    WalkReturn = erl_af_walk_return:new(#{node => Node1, state => Context1}),
+    update_sequence(WalkReturn).
+
+%% case expression
 is_scope_group(case_expr, #{}) ->
     true;
+%% if expression
 is_scope_group(if_expr, #{}) ->
     true;
+%% catch expression
 is_scope_group(catch_expr, #{}) ->
     true;
+%% receive expression
 is_scope_group(receive_expr, #{}) ->
     true;
+%% try expression
 is_scope_group(try_expr, #{}) ->
     true;
+%% function call expression
 is_scope_group(application, #{strict := true}) ->
     true;
+%% map expression
 is_scope_group(map_expr, #{strict := true}) ->
     true;
+%% record expression
 is_scope_group(record_expr, #{strict := true}) ->
     true;
+%% infix expression
 is_scope_group(infix_expr, #{strict := true}) ->
     true;
+%% tuple expression
 is_scope_group(tuple, #{strict := true}) ->
     true;
+%% list expression
 is_scope_group(list, #{strict := true}) ->
     true;
 is_scope_group(_Type, #{}) ->
@@ -433,20 +457,6 @@ rebind_match_left_var(Var, Context) ->
 rebind_comprehension_generate_var(Var, Context) ->
     rebind_var(Var, Context).
 
-
-%% -type scope_context() :: #{local_varnames    => ordsets:ordsets(),
-%%                            local_renames     => maps:maps(),
-%%                            global_varnames   => ordsets:ordsets(),
-%%                            global_renames    => maps:maps(),
-%%                            pattern_varnames  => ordsets:ordsets(),
-%%                            varnames_stack    => [],
-%%                            renames_stack     => [],
-%%                            scope_group_stack => []
-%%                           }.
-
-%%%===================================================================
-%%% API
-%%%===================================================================
 new_context() ->
     #{local_varnames   => ordsets:new(),
       local_renames     => maps:new(),
@@ -457,8 +467,8 @@ new_context() ->
       renames_stack     => [],
       scope_group_stack => []}.
 
-%% with_scope_group(NodeM) ->
-%%     with_scope_type(scope_group, NodeM).
+with_scope_group(NodeM) ->
+    with_scope_type(scope_group, NodeM).
 
 %% with_nonfun_clause(NodeM) ->
 %%     with_scope_type(nonfun_clause, NodeM).
@@ -626,15 +636,7 @@ entry_pattern(PatternType, #{} = Context) ->
 exit_pattern(PatternType, #{pattern := PatternType} = Context) ->
     Context1 = maps:remove(pattern, Context),
     Context1#{pattern_varnames => ordsets:new()}.
-%%--------------------------------------------------------------------
-%% @doc
-%% @spec
-%% @end
-%%--------------------------------------------------------------------
 
-%%%===================================================================
-%%% Internal functions
-%%%===================================================================
 new_variable_name(Variable, Variables) ->
     new_variable_name(Variable, Variables, 1).
 

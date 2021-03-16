@@ -10,12 +10,14 @@
 
 -include("rebinding.hrl").
 
+-rebinding_all([debug]).
+
 -rebinding_fun({[test_lc, test_case, test_if], []}).
 -rebinding_fun({[test_case_pinned], [clause_pinned]}).
 -rebinding_fun({[test_function], [strict]}).
 -rebinding_fun({[test_operator, test_tuple, test_list, test_try, test_function_guard], [strict]}).
--rebinding_fun({[test_map, test_map_update], [strict]}).
--rebinding_fun({[test_rec, test_rec_update], [strict]}).
+-rebinding_fun({[test_map, test_map_update], [strict, debug]}).
+-rebinding_fun({[test_rec, test_rec_update], [strict, debug]}).
 -rebinding_fun({[test_lc_origin, test_function_origin, test_case_origin], non_rebinding}).
 -rebinding_fun({[test_operator_origin, test_tuple_origin, test_list_origin], non_rebinding}).
 -rebinding_fun({[test_map_origin, test_map_update_origin], non_rebinding}).

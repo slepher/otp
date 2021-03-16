@@ -8,9 +8,7 @@
 %%%-------------------------------------------------------------------
 -module(erl_af_rebinding).
 
--include("af_struct_name.hrl").
 -include("do.hrl").
-
 
 %% API
 -export([parse_transform/2, format_error/1]).
@@ -36,12 +34,6 @@ format_error(Message) ->
         true -> Message;
         _    -> io_lib:write(Message)
     end.
-%%--------------------------------------------------------------------
-%% @doc
-%% @spec
-%% @end
-%%--------------------------------------------------------------------
-
 %%%===================================================================
 %%% load options
 %%%===================================================================
@@ -161,7 +153,7 @@ walk_function_clause(Clause, RebindingOptions) ->
 walk_node(prefix_expr, {op, _Line1, '+', {var, _Line3, _Varname} = Var},
           #{pattern := PatternType} = Context, #{node := pattern})
   when PatternType == match_left; PatternType == clause_match ->
-    Var1 = rename_pinned_var(Var, Context),
+    Var1 = rename_var(Var, Context),
     erl_af_walk_return:new(#{node => Var1, continue => true});
 
 walk_node(infix_expr, _Expr, #{}, #{node := expression, strict := true}) ->
@@ -226,31 +218,31 @@ walk_node(catch_expr, _Catch, #{}, #{}) ->
 
 %% rename var if current node is expression.
 walk_node(variable, Var, #{} = Context, #{node := expression}) ->
-    to_walk_return(Var, rename_expression_var(Var, Context));
+    to_walk_return(Var, rename_var(Var, Context));
 
 %% rename var if current node is guard.
 walk_node(variable, Var, #{} = Context, #{node := guard}) ->
-    to_walk_return(Var, rename_guard_var(Var, Context));
+    to_walk_return(Var, rename_var(Var, Context));
 
 %% rename var if current node is clause match pattern.
 walk_node(variable, Var, #{pattern := clause_match} = Context, #{clause_pinned := true}) ->
-    to_walk_return(Var, rename_clause_match_var(Var, Context));
+    to_walk_return(Var, rename_var(Var, Context));
 
 %% rename var if current node is clause match pattern.
 walk_node(variable, Var, #{pattern := clause_match} = Context, #{}) ->
-    to_walk_return(Var, rebind_clause_match_var(Var, Context));
+    to_walk_return(Var, rebind_var(Var, Context));
 
 %% rebind var if current node is function pattern.
 walk_node(variable, Var, #{pattern := function_clause} = Context, #{node := pattern}) ->
-    to_walk_return(Var, rebind_function_clause_var(Var, Context));
+    to_walk_return(Var, rebind_var(Var, Context));
 
 %% rebind var if current node is match pattern.
 walk_node(variable, Var, #{pattern := match_left} = Context, #{node := pattern}) ->
-    to_walk_return(Var, rebind_match_left_var(Var, Context));
+    to_walk_return(Var, rebind_var(Var, Context));
 
 %% rebind var if current node is comprehension_generate pattern.
 walk_node(variable, Var, #{pattern := comprehension_generate} = Context, #{node := pattern}) ->
-    to_walk_return(Var, rebind_comprehension_generate_var(Var, Context));
+    to_walk_return(Var, rebind_var(Var, Context));
 
 walk_node(_NodeType, _Node, Context, #{}) ->
     erl_af_walk_return:new(#{state => Context}).
@@ -320,23 +312,23 @@ walk_clause_parent_expression() ->
     Sequence = fun sequence_scope_group_subtrees/1,
     erl_af_walk_return:new(#{continue => Sequence}).
 
-%% these expression has it's scope group
-%% for this scope, we name it argument scope
-%% every variable binded in scope could not used in neighbour scope, but avaliable outside scope group
 %% hello(A = 1, A1 = 2)
 %% [A = 1|[A1 = 2]]
 %% {A = 1, A1 = 2}
 %% #hello{world1 = (A = 1), world2 = (A1 = 2)}
 %% #{world1 => (A = 1), world2 => (A1 = 2)}
 %% (A = 1) + (A1 = 2)
+%% these expression has it's scope group
+%% for this scope, we name it argument scope
+%% every variable binded in scope could not used in neighbour scope, but avaliable outside scope group
 %% for example
 %% 1> (A = A1) + (A1 = 2).
 %% * 1: variable 'A1' is unbound
 %% 1> (A = 1) + (A1 = A).
 %% * 1: variable 'A' is unbound
-%% 3> ((A = 1) + (A1 = 2)), A1.
+%% 1> ((A = 1) + (A1 = 2)), A1.
 %% 2
-%% usually use dont write code this style, so variable rebinding only works in strict mode.
+%% usually user dont write code this style, so variable rebinding only works in strict mode.
 walk_scope_group_expression() ->
     Sequence = fun sequence_scope_group_with_argument/1,
     erl_af_walk_return:new(#{continue => Sequence}).
@@ -353,30 +345,6 @@ sequence_scope_group_with_argument(SubtreeMss) ->
                   SubtreeM
           end, SubtreeMss),
     sequence_scope_group_subtrees(SubtreeMss1).
-
-rename_pinned_var(Var, Context) ->
-    rename_var(Var, Context).
-
-rename_expression_var(Var, Context) ->
-    rename_var(Var, Context).
-
-rename_guard_var(Var, Context) ->
-    rename_var(Var, Context).
-
-rename_clause_match_var(Var, Context) ->
-    rename_var(Var, Context).
-
-rebind_clause_match_var(Var, Context) ->
-    rebind_var(Var, Context).
-
-rebind_function_clause_var(Var, Context) ->
-    rebind_var(Var, Context).
-
-rebind_match_left_var(Var, Context) ->
-    rebind_var(Var, Context).
-
-rebind_comprehension_generate_var(Var, Context) ->
-    rebind_var(Var, Context).
 
 new_context() ->
     #{local_varnames   => ordsets:new(),

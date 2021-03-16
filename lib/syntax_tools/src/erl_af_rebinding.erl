@@ -294,7 +294,7 @@ walk_clause(#{parent := Parent}) ->
     PatternType = scope_type_pattern(ScopeType),
     Sequence =
         fun([PatternMs|RestTreeMs]) ->
-                PatternsM1 = with_pattern(PatternType, PatternMs),
+                PatternsM1 = with_scope_type(PatternType, PatternMs),
                 with_scope_type(ScopeType, erl_af_traverse_m:deep_sequence_nodes([PatternsM1|RestTreeMs]))
         end,
     erl_af_walk_return:new(#{continue => Sequence}).
@@ -366,17 +366,13 @@ with_shadowed(NodeM) ->
     with_scope_type(shadowed, NodeM).
 
 with_match_left_pattern(NodeM) ->
-    with_pattern(match_left, NodeM).
+    with_scope_type(match_left, NodeM).
 
 with_function_clause_pattern(NodeM) ->
-    with_pattern(function_clause, NodeM).
+    with_scope_type(function_clause, NodeM).
 
 with_comprehension_generate_pattern(NodeM) ->
-    with_pattern(comprehension_generate, NodeM).
-
-with_pattern(PatternType, NodeM) ->
-    ScopeType = pattern_to_scope_type(PatternType),
-    with_scope_type(ScopeType, NodeM).
+    with_scope_type(comprehension_generate, NodeM).
 
 with_scope_type(ScopeType, NodeMs) when is_list(NodeMs) ->
     NodesM = erl_af_traverse_m:sequence_nodes(NodeMs),
@@ -447,8 +443,7 @@ entry_scope_type(argument, Context) ->
 entry_scope_type(shadowed, Context) ->
     entry_shadowed(Context);
 entry_scope_type(ScopeType, Context) ->
-    PatternType = scope_to_pattern_type(ScopeType),
-    entry_pattern(PatternType, Context).
+    entry_pattern(ScopeType, Context).
 
 exit_scope_type(scope_group, Context) ->
     exit_scope_group(Context);
@@ -459,8 +454,7 @@ exit_scope_type(argument, Context) ->
 exit_scope_type(shadowed, Context) ->
     exit_shadowed(Context);
 exit_scope_type(ScopeType, Context) ->
-    PatternType = scope_to_pattern_type(ScopeType),
-    exit_pattern(PatternType, Context).
+    exit_pattern(ScopeType, Context).
 
 entry_scope_group(#{scope_group_stack := ScopeStack} = Context) ->
     ScokeStack1 = [{ordsets:new(), maps:new()}|ScopeStack],
@@ -570,21 +564,3 @@ scope_type_pattern(shadowed) ->
     function_clause;
 scope_type_pattern(nonfun_clause) ->
     clause_match.
-
-pattern_to_scope_type(function_clause) ->
-    function_clause_pattern;
-pattern_to_scope_type(clause_match) ->
-    clause_match_pattern;
-pattern_to_scope_type(comprehension_generate) ->
-    comprehension_generate_pattern;
-pattern_to_scope_type(match_left) ->
-    match_left_pattern.
-
-scope_to_pattern_type(function_clause_pattern) ->
-    function_clause;
-scope_to_pattern_type(clause_match_pattern) ->
-    clause_match;
-scope_to_pattern_type(comprehension_generate_pattern) ->
-    comprehension_generate;
-scope_to_pattern_type(match_left_pattern) ->
-    match_left.

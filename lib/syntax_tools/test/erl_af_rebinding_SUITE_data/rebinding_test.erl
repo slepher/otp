@@ -56,8 +56,7 @@ test_lc_origin(A) ->
 test_function(A) ->
     B = 10,
     B = ok(begin A = A + 1, A end, begin A = A + B, A end),
-    B = bind(A + B,
-             fun(A) -> A = A + B, A end),
+    B = bind(A + B, fun(A) -> A = A + B, A end),
     A = B + 1,
     A = A + 1,
     A.
@@ -66,11 +65,10 @@ test_function_origin(A) ->
     B = 10,
     B_1 = ok(begin A_1 = A + 1, A_1 end,
 	     begin A_2 = A + B, A_2 end),
-    B_2 = bind(begin A_3 = A_2 + B_1, A_3 end,
-	       fun (A_4) -> A_5 = A_4 + B_1, A_5 end),
-    A_4 = B_2 + 1,
-    A_5 = A_4 + 1,
-    A_5.
+    B_2 = bind(A_2 + B_1, fun (A_3) -> A_4 = A_3 + B_1, A_4 end),
+    A_3 = B_2 + 1,
+    A_4 = A_3 + 1,
+    A_4.
 
 test_case(A) ->
     B = 15,
@@ -80,7 +78,7 @@ test_case(A) ->
     B = case A of
             10 -> A = A + 1, A = A + 1, A;
             +B ->  B = A + 1, A = B + 1, A;
-            A ->  B = A + B, B
+            +A ->  B = A + B, B
         end,
     B = A + B,
     A = A + B,

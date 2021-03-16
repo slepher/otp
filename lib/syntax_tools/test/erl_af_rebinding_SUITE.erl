@@ -30,9 +30,19 @@ suite() ->
 %% @end
 %%--------------------------------------------------------------------
 init_per_suite(Config) ->
-    erlang:system_flag(backtrace_depth, 20),    
     TestModules = [rebinding_example, rebinding_test],
-    erl_af_test_lib:load_data_modules(Config, TestModules).
+    erl_af_test_lib:load_data_modules(Config, TestModules),
+    Forms = erl_af_test_lib:test_module_forms(rebinding_test, Config),
+    Forms1 = erl_af_rebinding:parse_transform(Forms, erl_af_test_lib:compile_opts()),
+    Functions =
+        lists:foldl(
+            fun({function, _Line, Name, _Arity, Clauses}, Acc) ->
+                    Clauses1 = erl_af_lib:replace_line(Clauses, 0),
+                    maps:put(Name, Clauses1, Acc);
+               (_Form, Acc) ->
+                   Acc
+            end, #{}, Forms1),
+    [{functions, Functions}|Config].
 
 %%--------------------------------------------------------------------
 %% @spec end_per_suite(Config0) -> term() | {save_config,Config1}
@@ -134,19 +144,23 @@ test_rebinding_lc() ->
 %% Comment = term()
 %% @end
 %%--------------------------------------------------------------------
-test_lc(_Config) -> 
+test_lc(Config) ->
+    equal_functions(test_lc, test_lc_origin, Config),
     A = rebinding_test:test_lc(10),
     B = rebinding_test:test_lc_origin(10),
     ?assertEqual(A, B),
     ok.
 
-test_function(_Config) ->
+test_function(Config) ->
+    equal_functions(test_function, test_function_origin, Config),
     A = rebinding_test:test_function(10),
     B = rebinding_test:test_function_origin(10),
     ?assertEqual(A, B),
     ok.
 
-test_case(_Config) ->
+test_case(Config) ->
+    equal_functions(test_case, test_case_origin, Config),
+    equal_functions(test_case_pinned, test_case_origin, Config),
     A = rebinding_test:test_case(10),
     B = rebinding_test:test_case_origin(10),
     C = rebinding_test:test_case_pinned(10),
@@ -154,49 +168,57 @@ test_case(_Config) ->
     ?assertEqual(A, C),
     ok.
 
-test_if(_Config) ->
+test_if(Config) ->
+    equal_functions(test_if, test_if_origin, Config),
     A = rebinding_test:test_if(10),
     B = rebinding_test:test_if_origin(10),
     ?assertEqual(A, B),
     ok.
 
-test_rec(_Config) ->
+test_rec(Config) ->
+    equal_functions(test_rec, test_rec_origin, Config),
     A = rebinding_test:test_rec(10),
     B = rebinding_test:test_rec_origin(10),
     ?assertEqual(A, B),
     ok.
 
-test_rec_update(_Config) ->
+test_rec_update(Config) ->
+    equal_functions(test_rec_update, test_rec_update_origin, Config),
     A = rebinding_test:test_rec_update(10),
     B = rebinding_test:test_rec_update_origin(10),
     ?assertEqual(A, B),
     ok.
 
-test_map(_Config) ->
+test_map(Config) ->
+    equal_functions(test_map, test_map_origin, Config),
     A = rebinding_test:test_map(10),
     B = rebinding_test:test_map_origin(10),
     ?assertEqual(A, B),
     ok.
 
-test_map_update(_Config) ->
+test_map_update(Config) ->
+    equal_functions(test_map_update, test_map_update_origin, Config),
     A = rebinding_test:test_map_update(10),
     B = rebinding_test:test_map_update_origin(10),
     ?assertEqual(A, B),
     ok.
 
-test_operator(_Config) ->
+test_operator(Config) ->
+    equal_functions(test_operator, test_operator_origin, Config),
     A = rebinding_test:test_operator(10),
     B = rebinding_test:test_operator_origin(10),
     ?assertEqual(A, B),
     ok.
 
-test_tuple(_Config) ->
+test_tuple(Config) ->
+    equal_functions(test_tuple, test_tuple_origin, Config),
     A = rebinding_test:test_tuple(10),
     B = rebinding_test:test_tuple_origin(10),
     ?assertEqual(A, B),
     ok.
 
-test_list(_Config) ->
+test_list(Config) ->
+    equal_functions(test_list, test_list_origin, Config),
     A = rebinding_test:test_list(10),
     B = rebinding_test:test_list_origin(10),
     ?assertEqual(A, B),
@@ -222,3 +244,8 @@ test_pattern_save_var_in_case(_Config) ->
     ?assertEqual(3, A),
     ?assertEqual(7, B),
     ok.
+
+
+equal_functions(F1, F2, Config) ->
+    Functions = proplists:get_value(functions, Config),
+    ?assertEqual(maps:get(F1, Functions), maps:get(F2, Functions)).

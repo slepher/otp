@@ -116,7 +116,7 @@ all() ->
      test_reduce_attr, test_with_formatter, 
      test_options, test_validator, test_with_attribute, test_forms_with_attribute,
      test_traverse_m_updated, test_map_forms, test_sequence_nodes, test_deep_sequence_children,
-     test_continue_sequence_children].
+     test_continue_sequence_children, test_replace_line].
 
 %%--------------------------------------------------------------------
 %% @spec TestCase() -> Info
@@ -237,7 +237,6 @@ test_reduce_attr(Config) ->
                   Acc
           end, 0, Forms, #{formatter => ?MODULE, traverse => form, simplify_return => false}),
     #{'__struct__' := ?RETURN_OK, error := Error} = ReturnM,
-    io:format("errors is ~p~n", [erl_af_error:printable(Error)]),
     FileWarnings = [{File, [{2, ?MODULE, mark_0}]}],
     FileErrors = [{File, [{1, ?MODULE, mark_error_0}]}],
     ?assertMatch({FileErrors, FileWarnings}, erl_af_test_lib:realize_with_baseline(Baseline, Error)),
@@ -457,4 +456,11 @@ test_continue_sequence_children(_Config) ->
     Return1 = erl_af_traverse_m:exec(Monad1, erl_af, []),
     ?assertEqual({just, [c, 'Var', b, a]}, erl_af_return:run(Return)),
     ?assertEqual({just, [c, b, a, 'Var']}, erl_af_return:run(Return1)),
+    ok.
+
+
+test_replace_line(_Config) ->
+    Record = {record,1, {var,1,'B'}, rec, [{record_field, 1, {atom,1,a},{var,1,'A'}}]},
+    Record1 = erl_af_lib:replace_line(Record, 0),
+    ?assertEqual({record,0, {var,0,'B'}, rec, [{record_field, 0, {atom,0,a},{var,0,'A'}}]}, Record1),
     ok.

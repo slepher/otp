@@ -66,7 +66,13 @@ replace_line_cond(Cond, Ast, Line) when is_integer(Line) ->
                               Tuple
                       end;
                   _ ->
-                      Tuple
+                      Pos = erl_syntax:get_pos(Tuple),
+                      case Cond(Pos) of
+                          true ->
+                              erl_syntax:set_pos(Tuple, Line);
+                          false ->
+                              Tuple
+                      end
               end;
          (Node, _Attr) ->
               Node

@@ -128,13 +128,12 @@ match_rebinding(Name, Arity, RebindingOptionsRec) ->
             {ok, RebindingOptions}
     end.
 
-find_rebinding_options(Name, Arity, #rebinding_options{fun_options = FunOptions,
-                                                       global_options = AllOptions}) ->
-    case maps:find(Name, FunOptions) of
+find_rebinding_options(Name, Arity, #rebinding_options{fun_options = FunOptions, global_options = AllOptions}) ->
+    case maps:find({Name, Arity}, FunOptions) of
         {ok, Options} ->
             Options;
         error ->
-            case maps:find({Name, Arity}, FunOptions) of
+            case maps:find(Name, FunOptions) of
                 {ok, Options} ->
                     Options;
                 error ->
@@ -157,6 +156,8 @@ walk_function_clause(Clause, RebindingOptions) ->
              end, Clause, Opts)
        ]).
 
+%% the + pin operator will be replaced with ^ pin operator after this pull request merged.
+%% https://github.com/erlang/otp/pull/2951
 walk_node(prefix_expr, {op, _Line1, '+', {var, _Line3, _Varname} = Var},
           #{pattern := PatternType} = Context, #{node := pattern})
   when PatternType == match_left; PatternType == clause_match ->
@@ -289,11 +290,10 @@ walk_generate() ->
 
 walk_match() ->
     Sequence =
-        fun([PatternMs, ExpressionM]) ->
-                PatternsM = erl_af_monad:sequence_m(PatternMs, erl_af_traverse_m),
-                PatternsM1 = with_match_left_pattern(PatternsM),
+        fun([PatternMs, ExpressionMs]) ->
+                PatternsM1 = with_match_left_pattern(PatternMs),
                 %% walk expression first
-                erl_af_traverse_m:deep_r_sequence_nodes([PatternsM1, ExpressionM])
+                erl_af_traverse_m:deep_r_sequence_nodes([PatternsM1, ExpressionMs])
         end,
     erl_af_walk_return:new(#{continue => Sequence}).
 
@@ -301,12 +301,13 @@ walk_clause(#{parent := Parent}) ->
     ScopeType = clause_scope_type(Parent),
     PatternType = scope_type_pattern(ScopeType),
     Sequence =
-        fun([PatternMs|RestTreesM]) ->
+        fun([PatternMs|RestTreeMs]) ->
                 PatternsM1 = with_pattern(PatternType, PatternMs),
-                with_scope_type(ScopeType, erl_af_traverse_m:deep_sequence_nodes([PatternsM1|RestTreesM]))
+                with_scope_type(ScopeType, erl_af_traverse_m:deep_sequence_nodes([PatternsM1|RestTreeMs]))
         end,
     erl_af_walk_return:new(#{continue => Sequence}).
 
+%% Function Name in named fun should also be pattern and whole scope is shadowed.
 walk_named_fun() ->
     Sequence =
         fun([NameTreeMs|RestTreeMs]) ->
@@ -410,7 +411,7 @@ with_pattern(PatternType, NodeM) ->
     with_scope_type(ScopeType, NodeM).
 
 with_scope_type(ScopeType, NodeMs) when is_list(NodeMs) ->
-    NodesM = erl_af_monad:sequence_m(NodeMs, erl_af_traverse_m),
+    NodesM = erl_af_traverse_m:sequence_nodes(NodeMs),
     with_scope_type(ScopeType, NodesM);
 with_scope_type(ScopeType, NodeM) ->
     do([ erl_af_traverse_m ||
